@@ -14,6 +14,10 @@ import Json.Decode as Json exposing (Decoder, succeed, string, int, object3, (:=
 import Utils exposing (ignore, fire)
 import Config
 
+-- TODO store expires_in and modify it (subscription to time might help)
+-- TODO after that it might be of some use to make token permanent, refresh it
+-- TODO and may be store it in browser storage?
+
 type alias Token =
   { access_token : String
   , token_type   : String

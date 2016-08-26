@@ -47,13 +47,12 @@ decodeSubreddits =
   in
     at ["data"] decoder
 
-
 type alias Multireddit =
   { name       : MultiredditName
   , link       : String
-  , subreddits : Subreddits }
+  , subreddits : List SubredditName }
 
-decodeMultireddit : Decoder Multireddit
+decodeMultireddit : Decoder (Multireddit, Subreddits)
 decodeMultireddit =
   let
     nameDecoder = ("name" := string)
@@ -63,18 +62,28 @@ decodeMultireddit =
         folder item acc = Dict.insert item.name item acc
       in
         List.foldl folder Dict.empty
-    decoder = object3 Multireddit
+    decoder' = object3 (,,)
               ("name" := string)
               ("path" := string)
-              ("subreddits" := Json.map listToDict (list decodeSubreddit))
+              ("subreddits" := list decodeSubreddit)
+    mapper (name, path, subs) =
+      let
+        subNames = List.map .name subs
+      in
+        (Multireddit name path subNames, listToDict subs)
+    decoder = Json.map mapper decoder'
   in
     at ["data"] decoder
 
 type alias Multireddits = Dict MultiredditName Multireddit
 
-decodeMultireddits : Decoder Multireddits
+decodeMultireddits : Decoder (Multireddits, Subreddits)
 decodeMultireddits =
-  Json.map (List.foldl
-              (\item acc ->
-                 Dict.insert item.name item acc)
-              Dict.empty) <| list decodeMultireddit
+  let
+    folder (multi, subs) (accMultis, accSubs) =
+      ( Dict.insert multi.name multi accMultis
+      , Dict.union subs accSubs )
+  in
+    Json.map
+          (List.foldl folder (Dict.empty, Dict.empty))
+          (list decodeMultireddit)

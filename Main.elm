@@ -26,8 +26,8 @@ type alias Model =
   , multireddits : Multireddits
   , focused      : Focused }
 
-model : Model
-model =
+emptyModel : Model
+emptyModel =
   { apidata      = API.model
   , subreddits   = Dict.empty
   , multireddits = Dict.empty
@@ -39,7 +39,7 @@ type Msg = Noop
          | Load
          | GetSubreddits (Maybe After)
          | GotSubreddits (Maybe After, Subreddits)
-         | GotMultireddits Multireddits
+         | GotMultireddits (Multireddits, Subreddits)
          | SetFocus Focused
 
 main =
@@ -56,7 +56,7 @@ init code =
   let
     (apidata, cmd) = API.init code
   in
-    { model | apidata = apidata } ! [Cmd.map Api cmd]
+    { emptyModel | apidata = apidata } ! [Cmd.map Api cmd]
 
 update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
@@ -72,7 +72,10 @@ update msg model =
       model ! [fire Load]
 
     Load ->
-      model ! [fire (GetSubreddits Nothing)]
+      { model
+        | subreddits   = Dict.empty
+        , multireddits = Dict.empty
+      } ! [fire (GetSubreddits Nothing)]
 
     Api msg -> let (apidata, apimsg) = API.update msg model.apidata
                in  { model | apidata = apidata
@@ -87,16 +90,13 @@ update msg model =
               Nothing -> getMultireddits model.apidata.token
               Just a  -> getSubreddits model.apidata.token after ]
 
-    GotMultireddits multireddits ->
+    GotMultireddits (multireddits, subreddits) ->
       let
-        folder _ item acc =
-          Dict.union acc item.subreddits
-        allSubreddits =
-          multireddits |> Dict.foldl folder model.subreddits
+        newSubreddits = Dict.union subreddits model.subreddits
       in
         { model
-        | subreddits = allSubreddits
-        , multireddits = multireddits
+          | subreddits = newSubreddits
+          , multireddits = multireddits
         } ! [Cmd.none]
 
     SetFocus focused ->
@@ -111,7 +111,9 @@ view model =
          , if s.subscribed
            then Styles.subSubscribed
            else Styles.subNotSubscribed
-         ] [ text s.link ]
+         ] [ text s.link
+           , ul [] <| List.map (\name -> li [] [text name]) s.multireddits
+           ]
     viewMultireddit m =
       li [ Styles.item
          , onClick (SetFocus <| FMulti m.name)
@@ -133,9 +135,18 @@ view model =
         FAll ->
           Dict.values model.subreddits
         FMulti mname ->
-          Maybe.withDefault [] <|
-          Maybe.map (.subreddits >> Dict.values) <|
-          Dict.get mname model.multireddits
+          let
+            subredditNames =
+              model.multireddits
+                |> Dict.get mname
+                |> Maybe.map .subreddits
+                |> Maybe.withDefault []
+            subreddits =
+              model.subreddits
+                |> Dict.filter (\sname _ -> sname `List.member` subredditNames)
+                |> Dict.values
+          in
+            subreddits
         FSubscribed ->
           List.filter .subscribed <| Dict.values model.subreddits
         FNotSubscribed ->
@@ -143,14 +154,21 @@ view model =
         FNotInMulti ->
           let
             folder _ {subreddits} acc =
-              Dict.foldl
-                    (\_ item acc' -> Dict.insert item.name item acc')
+              List.foldl
+                    (\item acc' -> Dict.insert item item acc')
                       acc
                       subreddits
             allInMulti =
               Dict.foldl folder Dict.empty model.multireddits
+
           in
-            Dict.values <| Dict.diff model.subreddits allInMulti
+            Dict.merge
+                  (\_ s acc -> s::acc)
+                  (\_ _ _ acc -> acc)
+                  (\_ _ acc -> acc)
+                  model.subreddits
+                  allInMulti
+                  []
     menu = ul [ Styles.list
               , style [("float", "left")] ]
            ( [ viewOther FAll "All"
