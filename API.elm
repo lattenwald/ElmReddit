@@ -16,7 +16,7 @@ import Config
 
 -- TODO store expires_in and modify it (subscription to time might help)
 -- TODO after that it might be of some use to make token permanent, refresh it
--- TODO and may be store it in browser storage?
+-- TODO and may be store it in browser storage? or hash even? maybe better only refresh token?
 
 type alias Token =
   { access_token : String

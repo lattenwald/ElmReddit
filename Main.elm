@@ -64,18 +64,18 @@ update msg model =
     Noop ->
       model ! []
 
-    GotError err -> -- TODO
+    GotError err -> -- TODO show this somewhere
       ignore (Debug.log "GotError" err) <|
       model ! [Cmd.none]
 
     Api API.Loaded ->
       model ! [fire Load]
 
-    Load ->
-      { model
-        | subreddits   = Dict.empty
-        , multireddits = Dict.empty
-      } ! [fire (GetSubreddits Nothing)]
+    Load -> {
+      model
+    | subreddits   = Dict.empty
+    , multireddits = Dict.empty
+    } ! [fire (GetSubreddits Nothing)]
 
     Api msg -> let (apidata, apimsg) = API.update msg model.apidata
                in  { model | apidata = apidata
@@ -92,12 +92,31 @@ update msg model =
 
     GotMultireddits (multireddits, subreddits) ->
       let
+        subMultis : Dict SubredditName (List MultiredditName)
+        subMultis =
+          let
+            maybeCons item maybeList =
+              case maybeList of
+                Nothing   -> Just [item]
+                Just list -> Just (item::list)
+            folder : MultiredditName -> Multireddit
+                   -> Dict SubredditName (List MultiredditName)
+                   -> Dict SubredditName (List MultiredditName)
+            folder mname {subreddits} acc =
+              List.foldl
+                    (\sname acc' ->
+                              Dict.update sname (maybeCons mname) acc')
+                    acc subreddits
+          in
+            Debug.log "subMultis" <| Dict.foldl folder Dict.empty multireddits
+        newSubreddits : Subreddits
         newSubreddits = Dict.union subreddits model.subreddits
-      in
-        { model
-          | subreddits = newSubreddits
-          , multireddits = multireddits
-        } ! [Cmd.none]
+                      |> Dict.map (\sname s -> { s | multireddits = Maybe.withDefault [] (Dict.get sname subMultis)})
+      in {
+        model
+      | subreddits = newSubreddits
+      , multireddits = multireddits
+      } ! [Cmd.none]
 
     SetFocus focused ->
       { model | focused = focused
@@ -112,7 +131,9 @@ view model =
            then Styles.subSubscribed
            else Styles.subNotSubscribed
          ] [ text s.link
-           , ul [] <| List.map (\name -> li [] [text name]) s.multireddits
+           , ul [ Styles.multiInSubList
+                ] <| List.map (\name -> li [ Styles.multiInSubItem
+                                           ] [text name]) s.multireddits
            ]
     viewMultireddit m =
       li [ Styles.item
