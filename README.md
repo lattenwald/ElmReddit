@@ -2,7 +2,27 @@
 
 ## What is it
 
-To be Reddit susbcriptions manager, for now it's only a viewer. Still might be useful.
+To be Reddit susbcriptions manager. Ugly, to be better.
+
+Following actions supported:
+
+* Viewing
+  * All subreddits
+  * Subreddits from specific multireddit
+  * Subreddits not present in any multireddit
+  * All subreddits where user is subscriber
+  * All subreddits present in any multireddit where user is not a subscriber
+* Editing
+  * Add subreddit to multireddit
+  * Remove subreddit from multireddit
+
+Not (yet?) implemented:
+
+* Subscribe to subreddit
+* Unsubscribe from subreddit
+* Create multireddit
+* Remove multireddit
+* Add subreddit to multireddit if it's not listed in any of supported views
 
 ## Installation
 
