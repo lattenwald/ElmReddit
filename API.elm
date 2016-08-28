@@ -156,14 +156,14 @@ view {token, error, identity} =
 subscriptions : Model -> Sub Msg
 subscriptions _ = Sub.none
 
-signedSend :  String -> String -> String -> Http.Body
+signedSend :  String -> String -> String -> List (String, String) -> Http.Body
            -> Task Http.RawError Http.Response
-signedSend token verb url body =
+signedSend token verb url headers body =
   let
     authHeader = ("Authorization", "bearer " ++ token)
     request    =
       { verb    = verb
-      , headers = [authHeader, ("Accept", "application/json")]
+      , headers = [authHeader, ("Accept", "application/json")] ++ headers
       , url     = url
       , body    = body }
   in
@@ -171,7 +171,12 @@ signedSend token verb url body =
 
 signedGet : String -> String -> Decoder a -> Task Http.Error a
 signedGet token url decoder =
-  Http.fromJson decoder <| signedSend token "GET" url Http.empty
+  Http.fromJson decoder <| signedSend token "GET" url [] Http.empty
+
+signedPut : String -> String -> Http.Body -> Decoder a
+          -> Task Http.Error a
+signedPut token url body decoder =
+  Http.fromJson decoder <| signedSend token "PUT" url [("Content-Type", "application/x-www-form-urlencoded")] body
 
 getIdentity : Maybe Token -> Cmd Msg
 getIdentity token =
@@ -209,3 +214,13 @@ get maybeToken fail success url decoder =
     Just token ->
       Task.perform fail success
             <| signedGet token.access_token url decoder
+
+put : Maybe Token -> (Http.Error -> msg) -> (data -> msg) -> String
+    -> Http.Body -> Decoder data
+    -> Cmd msg
+put maybeToken fail success url body decoder =
+  case maybeToken of
+    Nothing -> Cmd.none
+    Just token ->
+      Task.perform fail success
+          <| signedPut token.access_token url body decoder

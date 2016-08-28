@@ -4,6 +4,7 @@ import Dict exposing (Dict)
 import Json.Decode as Json
   exposing ( Decoder, object5, string, bool, succeed, (:=), at
            , oneOf, null, object2, list, object3)
+import Set exposing (Set)
 
 type alias SubredditName = String
 type alias MultiredditName = String
@@ -14,7 +15,7 @@ type alias Subreddit =
   , display_name : String
   , subscribed   : Bool
   , link         : String
-  , multireddits : List MultiredditName }
+  , multireddits : Set MultiredditName }
 
 decodeSubreddit : Decoder Subreddit
 decodeSubreddit =
@@ -24,7 +25,7 @@ decodeSubreddit =
               ("display_name"       := string)
               ("user_is_subscriber" := bool)
               ("url"                := string)
-              (succeed [])
+              (succeed Set.empty)
   in
     at ["data"] decoder
 
@@ -50,7 +51,7 @@ decodeSubreddits =
 type alias Multireddit =
   { name       : MultiredditName
   , link       : String
-  , subreddits : List SubredditName }
+  , subreddits : Set SubredditName }
 
 decodeMultireddit : Decoder (Multireddit, Subreddits)
 decodeMultireddit =
@@ -68,7 +69,7 @@ decodeMultireddit =
               ("subreddits" := list decodeSubreddit)
     mapper (name, path, subs) =
       let
-        subNames = List.map .name subs
+        subNames = Set.fromList <| List.map .name subs
       in
         (Multireddit name path subNames, listToDict subs)
     decoder = Json.map mapper decoder'
