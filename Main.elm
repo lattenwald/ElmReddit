@@ -1,7 +1,6 @@
 module Main exposing (..)
 
 -- TODOOO features:
--- TODOOO remove sub from multi
 -- TODOO subscribe
 -- TODOO unsubscribe
 -- TODO create new multi
@@ -59,6 +58,8 @@ type Msg = Noop
          | ChooseMulti Subreddit
          | AddToMulti Subreddit Multireddit Focused -- subreddit.display_name multireddit.link Focused
          | AddedToMulti Multireddit Subreddit
+         | RemoveFromMulti Subreddit Multireddit
+         | RemovedFromMulti Multireddit Subreddit
 
 main =
   Navigation.program API.urlParser
@@ -127,7 +128,7 @@ update msg model =
                               Dict.update sname (maybeCons mname) acc')
                     acc subreddits
           in
-            Debug.log "subMultis" <| Dict.foldl folder Dict.empty multireddits
+            Dict.foldl folder Dict.empty multireddits
         newSubreddits : Subreddits
         newSubreddits =
           Dict.union subreddits model.subreddits |>
@@ -177,22 +178,61 @@ update msg model =
           | subreddits = newSubreddits
           , multireddits = newMultireddits
         } ! [Cmd.none]
+    RemoveFromMulti s m ->
+      model ! [removeFromMulti model.apidata.token s m]
+    RemovedFromMulti m s ->
+      let
+        subUpdater : Maybe Subreddit -> Maybe Subreddit
+        subUpdater maybeSubreddit =
+          case maybeSubreddit of
+            Nothing -> Just s -- XXX logis is ok?
+            Just subreddit -> Just { subreddit | multireddits = Set.remove m.name subreddit.multireddits }
+        newSubreddits = Dict.update s.name subUpdater model.subreddits
+        multiUpdater : Maybe Multireddit -> Maybe Multireddit
+        multiUpdater maybeMulti =
+          case maybeMulti of
+            Nothing -> Just m -- XXX logic is ok?
+            Just multi -> Just { multi | subreddits = Set.remove s.name multi.subreddits }
+        newMultireddits = Dict.update m.name multiUpdater model.multireddits
+      in
+        { model
+          | subreddits = newSubreddits
+          , multireddits = newMultireddits
+        } ! [Cmd.none]
 
 view : Model -> Html Msg
 view model =
   let
     viewSubreddit s =
-      li [ Styles.item
-         -- TODO fix them styles: code is ugly
-         , if s.subscribed
-           then Styles.subSubscribed
-           else Styles.subNotSubscribed
-         ] [ text s.link
-           , ul [ Styles.multiInSubList
-                ] <| List.map (\name -> li [ Styles.multiInSubItem
-                                           ] [text name]) (Set.toList s.multireddits)
-           , button [onClick <| ChooseMulti s] [text "+"]
-           ]
+      let
+        viewMultiSub m =
+          li
+            [ Styles.multiInSubItem ]
+              [ text m.name
+              , button
+                  [ onClick (RemoveFromMulti s m) ]
+                  [ text "x" ]
+              ]
+        subMultis =
+          let
+            folder : MultiredditName -> List Multireddit -> List Multireddit
+            folder mname acc =
+              case Dict.get mname model.multireddits of
+                Nothing -> acc
+                Just m  -> m::acc
+          in
+            Set.foldl folder [] s.multireddits
+      in
+        li [ Styles.item
+           -- TODO fix them styles: code is ugly
+           , if s.subscribed
+             then Styles.subSubscribed
+             else Styles.subNotSubscribed
+           ] [ text s.link
+             , ul [ Styles.multiInSubList
+                  ] <| List.map viewMultiSub subMultis
+             , button [onClick <| ChooseMulti s] [text "+"]
+             ]
     viewMultireddit m =
       li [ Styles.item
          , onClick <|
@@ -336,3 +376,11 @@ addToMulti token subreddit multireddit =
            ]
   in
     API.put token GotError (AddedToMulti multireddit) url body decoder
+
+removeFromMulti : Maybe API.Token -> Subreddit -> Multireddit
+                -> Cmd Msg
+removeFromMulti token subreddit multireddit =
+  let
+    url = "https://oauth.reddit.com/api/multi" ++ multireddit.link ++ "/r/" ++ subreddit.display_name
+  in
+    API.delete token GotError (always <| RemovedFromMulti multireddit subreddit) url

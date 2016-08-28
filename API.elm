@@ -178,6 +178,31 @@ signedPut : String -> String -> Http.Body -> Decoder a
 signedPut token url body decoder =
   Http.fromJson decoder <| signedSend token "PUT" url [("Content-Type", "application/x-www-form-urlencoded")] body
 
+signedDelete : String -> String -> Task Http.Error ()
+signedDelete token url =
+  -- XXX there might be some better way, check evancz/elm-http documentation
+  let
+    response : Task Http.RawError Http.Response
+    response = signedSend token "DELETE" url [] Http.empty
+    handle : Http.Response -> Task Http.Error ()
+    handle response =
+      if 200 <= response.status && response.status < 300 then
+        case response.value of
+          Http.Text "" -> Task.succeed ()
+          _ ->
+            Task.fail (Http.UnexpectedPayload "Response body is a blob, expecting a string.")
+      else
+        Task.fail (Http.BadResponse response.status response.statusText)
+    promoteError : Http.RawError -> Http.Error
+    promoteError rawError =
+      case rawError of
+        Http.RawTimeout -> Http.Timeout
+        Http.RawNetworkError -> Http.NetworkError
+  in
+    Task.mapError promoteError response
+        `Task.andThen` handle
+
+
 getIdentity : Maybe Token -> Cmd Msg
 getIdentity token =
   case token of
@@ -224,3 +249,11 @@ put maybeToken fail success url body decoder =
     Just token ->
       Task.perform fail success
           <| signedPut token.access_token url body decoder
+
+delete : Maybe Token -> (Http.Error -> msg) -> (() -> msg) -> String
+       -> Cmd msg
+delete maybeToken fail success url =
+  case maybeToken of
+    Nothing -> Cmd.none
+    Just token ->
+      Task.perform fail success <| signedDelete token.access_token url
