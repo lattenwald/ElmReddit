@@ -1,5 +1,12 @@
 module Main exposing (..)
 
+-- TODOOO features:
+-- TODOOO remove sub from multi
+-- TODOO subscribe
+-- TODOO unsubscribe
+-- TODO create new multi
+-- TODO remove empty multi
+
 import API
 import Navigation
 import Dict exposing (Dict)
