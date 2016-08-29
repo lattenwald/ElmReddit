@@ -12,7 +12,7 @@ import Dict exposing (Dict)
 import Html.App as App
 import Html exposing (..)
 import Html.Events exposing (onClick)
-import Html.Attributes exposing (href, style)
+import Html.Attributes exposing (href, style, class, classList)
 import Http exposing (stringData)
 import Json.Encode
 import Json.Decode exposing (at)
@@ -21,7 +21,6 @@ import Set exposing (Set)
 
 import Utils exposing (..)
 import Types exposing (..)
-import Styles
 
 type Focused = FNone
              | FMulti MultiredditName
@@ -207,12 +206,12 @@ view model =
       let
         viewMultiSub m =
           li
-            [ Styles.multiInSubItem ]
-              [ text m.name
-              , button
-                  [ onClick (RemoveFromMulti s m) ]
-                  [ text "x" ]
-              ]
+            []
+            [ text m.name
+            , button
+                [ onClick (RemoveFromMulti s m) ]
+                [ text "x" ]
+            ]
         subMultis =
           let
             folder : MultiredditName -> List Multireddit -> List Multireddit
@@ -223,43 +222,31 @@ view model =
           in
             Set.foldl folder [] s.multireddits
       in
-        li [ Styles.item
-           -- TODO fix them styles: code is ugly
-           , if s.subscribed
-             then Styles.subSubscribed
-             else Styles.subNotSubscribed
+        li [ classList [ ("subreddit", True)
+                       , ("subscribed", s.subscribed) ]
            ] [ text s.link
-             , ul [ Styles.multiInSubList
-                  ] <| List.map viewMultiSub subMultis
+             , ul [ class "multireddits" ] <| List.map viewMultiSub subMultis
              , button [onClick <| ChooseMulti s] [text "+"]
              ]
     viewMultireddit m =
-      li [ Styles.item
-         , onClick <|
-             case model.state of
-               ChoosingMulti subreddit returnFocus ->
-                 AddToMulti subreddit m returnFocus
-               _ -> SetFocus (FMulti m.name)
-         -- TODO fix them styles: code is ugly
-         , if model.state == Focus (FMulti m.name)
-           then Styles.focused
-           else
-             case model.state of
-               ChoosingMulti subreddit _ ->
-                 if subreddit.name `Set.member` m.subreddits
-                 then Styles.focused
-                 else Styles.empty
-               _ ->
-                 Styles.empty
-
-         ] [ text m.name ]
+      let
+        focused =
+          case model.state of
+            Focus (FMulti mname) -> mname == m.name
+            ChoosingMulti s _    -> s.name `Set.member` m.subreddits
+            _                    -> False
+      in
+        li [ classList [ ("multireddit", True)
+                       , ("focused", focused) ]
+           , onClick <|
+               case model.state of
+                 ChoosingMulti subreddit returnFocus ->
+                   AddToMulti subreddit m returnFocus
+                 _ -> SetFocus (FMulti m.name)
+           ] [ text m.name ]
     viewOther focus text' =
-      li [ Styles.item
-         , onClick (SetFocus focus)
-         -- TODO fix them styles: code is ugly
-         , if model.state == Focus focus
-           then Styles.focused
-           else Styles.empty
+      li [ onClick (SetFocus focus)
+         , classList [ ("focused", model.state == Focus focus) ]
          ] [ text text' ]
     filteredSubreddits =
       case model.state of
@@ -304,8 +291,7 @@ view model =
                   []
         ChoosingMulti subreddit _ ->
           Dict.get subreddit.name model.subreddits |> maybeToList
-    menu = ul [ Styles.list
-              , style [("float", "left")] ]
+    menu = ul [ class "menu" ]
            ( [ viewOther FAll "All"
              , viewOther FSubscribed "Subscribed"
              , viewOther FNotSubscribed "Not subscribed"
@@ -313,8 +299,7 @@ view model =
                (List.map viewMultireddit
                   <| List.sortBy .name
                   <| Dict.values model.multireddits ) )
-    content = ul [ Styles.list
-                 , style [ ("paddingLeft", "10em") ] ]
+    content = ul [ class "list" ]
               <| List.map viewSubreddit
               <| List.sortBy .link
               <| filteredSubreddits

@@ -31,7 +31,7 @@ Just clone the repo.
 ## Running
 
 Go to cloned repo and run `elm-reactor` (I am assuming you have `elm` installed),
-then navigate to `http://localhost:8000/Main.elm` in your browser
+then navigate to `http://localhost:8000/index.html` in your browser
 
 ## Caveats
 
