@@ -14,7 +14,6 @@ import Html.Attributes exposing (href, style, class, classList)
 import Http exposing (stringData)
 import Json.Encode
 import Json.Decode exposing (at)
-import String
 import Set exposing (Set)
 
 import Utils exposing (..)
@@ -371,11 +370,7 @@ addToMulti token subreddit multireddit =
         then Result.Ok subreddit
         else Result.Err <| "expected \"name\" equal to \"" ++ subreddit.display_name ++ "\", got \"" ++ decodedName ++ "\""
     url = "https://oauth.reddit.com/api/multi" ++ multireddit.link ++ "/r/" ++ subreddit.display_name
-    body = Http.string <| String.dropLeft 1 <| Http.url ""
-           [ ( "model"
-             , Json.Encode.encode 0 <| Json.Encode.object [("name", Json.Encode.string subreddit.display_name)]
-             )
-           ]
+    body = Http.multipart [ stringData "model" <| Json.Encode.encode 0 <| Json.Encode.object [("name", Json.Encode.string subreddit.display_name)] ]
   in
     API.put token GotError (AddedToMulti multireddit) url body decoder
 
