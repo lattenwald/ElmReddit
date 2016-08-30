@@ -31,8 +31,10 @@ Just clone the repo.
 
 ## Running
 
-Go to cloned repo and run `elm-reactor` (I am assuming you have `elm` installed),
-then navigate to `http://localhost:8000/index.html` in your browser
+0. I am assuming you have `elm` installed
+1. Go to cloned repo and run `elm-make`
+2. Run `elm-reactor` from same directory
+3. Navigate to `http://localhost:8000/index.html` in your browser
 
 ## Caveats
 
