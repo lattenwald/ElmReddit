@@ -161,43 +161,33 @@ update msg model =
       } ! [addToMulti model.apidata.token subreddit multireddit]
     AddedToMulti m s ->
       let
-        subUpdater : Maybe Subreddit -> Maybe Subreddit
-        subUpdater maybeSubreddit =
-          case maybeSubreddit of
-            Nothing -> Just s
-            Just subreddit -> Just { subreddit | multireddits = Set.insert m.name subreddit.multireddits}
-        newSubreddits = Dict.update s.name subUpdater model.subreddits
-        multiUpdater : Maybe Multireddit -> Maybe Multireddit
-        multiUpdater maybeMulti =
-          case maybeMulti of
-            Nothing -> Just m
-            Just multi -> Just { multi | subreddits = Set.insert s.name multi.subreddits }
-        newMultireddits = Dict.update m.name multiUpdater model.multireddits
+        newSub =
+          (\sub -> { sub | multireddits = Set.insert m.name sub.multireddits }) <|
+          Maybe.withDefault s <| Dict.get s.name model.subreddits
+
+        newMulti =
+          (\multi -> { multi | subreddits = Set.insert s.name multi.subreddits }) <|
+          Maybe.withDefault m <| Dict.get m.name model.multireddits
       in
         { model
-          | subreddits = newSubreddits
-          , multireddits = newMultireddits
+          | subreddits   = Dict.insert newSub.name   newSub   model.subreddits
+          , multireddits = Dict.insert newMulti.name newMulti model.multireddits
         } ! [Cmd.none]
     RemoveFromMulti s m ->
       model ! [removeFromMulti model.apidata.token s m]
     RemovedFromMulti m s ->
       let
         subUpdater : Maybe Subreddit -> Maybe Subreddit
-        subUpdater maybeSubreddit =
-          case maybeSubreddit of
-            Nothing -> Just s -- XXX logis is ok?
-            Just subreddit -> Just { subreddit | multireddits = Set.remove m.name subreddit.multireddits }
-        newSubreddits = Dict.update s.name subUpdater model.subreddits
+        subUpdater =
+          Maybe.map (\s -> { s | multireddits = Set.remove m.name s.multireddits})
+
         multiUpdater : Maybe Multireddit -> Maybe Multireddit
-        multiUpdater maybeMulti =
-          case maybeMulti of
-            Nothing -> Just m -- XXX logic is ok?
-            Just multi -> Just { multi | subreddits = Set.remove s.name multi.subreddits }
-        newMultireddits = Dict.update m.name multiUpdater model.multireddits
+        multiUpdater =
+          Maybe.map (\m -> { m | subreddits = Set.remove s.name m.subreddits })
       in
         { model
-          | subreddits = newSubreddits
-          , multireddits = newMultireddits
+          | subreddits   = Dict.update s.name subUpdater model.subreddits
+          , multireddits = Dict.update m.name multiUpdater model.multireddits
         } ! [Cmd.none]
     Subscribe s ->
       model ! [subscribe model.apidata.token s]
