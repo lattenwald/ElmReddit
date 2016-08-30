@@ -15,13 +15,14 @@ Following actions supported:
 * Editing
   * Add subreddit to multireddit
   * Remove subreddit from multireddit
+  * Subscribe to subreddit
+  * Unsubscribe from subreddit
 
 Not (yet?) implemented:
 
-* Subscribe to subreddit
-* Unsubscribe from subreddit
 * Create multireddit
 * Remove multireddit
+* Subscribe to subreddit which is not listed in any of supported views
 * Add subreddit to multireddit if it's not listed in any of supported views
 
 ## Installation

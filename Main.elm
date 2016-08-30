@@ -1,8 +1,6 @@
 module Main exposing (..)
 
 -- TODOOO features:
--- TODOO subscribe
--- TODOO unsubscribe
 -- TODO create new multi
 -- TODO remove empty multi
 
@@ -59,6 +57,10 @@ type Msg = Noop
          | AddedToMulti Multireddit Subreddit
          | RemoveFromMulti Subreddit Multireddit
          | RemovedFromMulti Multireddit Subreddit
+         | Subscribe Subreddit
+         | Subscribed Subreddit
+         | Unsubscribe Subreddit
+         | Unsubscribed Subreddit
 
 main =
   Navigation.program API.urlParser
@@ -198,6 +200,18 @@ update msg model =
           | subreddits = newSubreddits
           , multireddits = newMultireddits
         } ! [Cmd.none]
+    Subscribe s ->
+      model ! [subscribe model.apidata.token s]
+    Subscribed s ->
+      { model
+        | subreddits = Dict.insert s.name s model.subreddits
+      } ! [Cmd.none]
+    Unsubscribe s ->
+      model ! [unsubscribe model.apidata.token s]
+    Unsubscribed s ->
+      { model
+        | subreddits = Dict.insert s.name s model.subreddits
+      } ! [Cmd.none]
 
 view : Model -> Html Msg
 view model =
@@ -227,6 +241,9 @@ view model =
            ] [ text s.link
              , ul [ class "multireddits" ] <| List.map viewMultiSub subMultis
              , button [onClick <| ChooseMulti s] [text "+"]
+             , if s.subscribed
+               then button [onClick <| Unsubscribe s] [text "unsub"]
+               else button [onClick <| Subscribe s] [text "sub"]
              ]
     viewMultireddit m =
       let
@@ -369,3 +386,21 @@ removeFromMulti token subreddit multireddit =
     url = "https://oauth.reddit.com/api/multi" ++ multireddit.link ++ "/r/" ++ subreddit.display_name
   in
     API.delete token GotError (always <| RemovedFromMulti multireddit subreddit) url
+
+subscribe : Maybe API.Token -> Subreddit -> Cmd Msg
+subscribe token subreddit =
+  let
+    body = Http.multipart [ stringData "action" "sub"
+                          , stringData "sr" subreddit.name ]
+  in
+    API.post token GotError Subscribed "https://oauth.reddit.com/api/subscribe"
+       body (fromJsonUnit { subreddit | subscribed = True })
+
+unsubscribe : Maybe API.Token -> Subreddit -> Cmd Msg
+unsubscribe token subreddit =
+  let
+    body = Http.multipart [ stringData "action" "unsub"
+                          , stringData "sr" subreddit.name ]
+  in
+    API.post token GotError Unsubscribed "https://oauth.reddit.com/api/subscribe"
+       body (fromJsonUnit { subreddit | subscribed = False })

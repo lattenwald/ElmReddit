@@ -1,6 +1,9 @@
 module Utils exposing (..)
 
 import Task
+import Json.Decode
+import Dict
+import Result
 
 unique : List comparable -> List comparable
 unique l =
@@ -44,3 +47,11 @@ maybeToList a =
 
 fire : a -> Cmd a
 fire msg = Task.perform identity identity (Task.succeed msg)
+
+fromJsonUnit : a -> Json.Decode.Decoder a
+fromJsonUnit val =
+  Json.Decode.customDecoder
+        (Json.Decode.dict Json.Decode.string) <| \dict ->
+          if Dict.isEmpty dict
+          then Result.Ok val
+          else Result.Err "expected empty JSON object"
