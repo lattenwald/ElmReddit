@@ -114,28 +114,33 @@ update msg model =
         subMultis : Dict SubredditName (Set MultiredditName)
         subMultis =
           let
-            maybeCons : comparable -> Maybe (Set comparable) -> Maybe (Set comparable)
-            maybeCons item maybeList =
-              case maybeList of
-                Nothing   -> Just <| Set.singleton item
-                Just set  -> Just <| Set.insert item set
             folder : MultiredditName -> Multireddit
                    -> Dict SubredditName (Set MultiredditName)
                    -> Dict SubredditName (Set MultiredditName)
             folder mname {subreddits} acc =
-              Set.foldl
-                    (\sname acc' ->
-                              Dict.update sname (maybeCons mname) acc')
-                    acc subreddits
+              let
+                folder' : SubredditName
+                        -> Dict SubredditName (Set MultiredditName)
+                        -> Dict SubredditName (Set MultiredditName)
+                folder' sname acc' =
+                        Dict.insert sname
+                              (Maybe.withDefault (Set.singleton mname) <|
+                               Maybe.map (\set -> Set.insert mname set) <|
+                               Dict.get sname acc) acc'
+              in
+                Set.foldl folder' acc subreddits
           in
             Dict.foldl folder Dict.empty multireddits
+
         newSubreddits : Subreddits
         newSubreddits =
-          Dict.union subreddits model.subreddits |>
-          Dict.map (\sname s ->
-                      { s | multireddits = Maybe.withDefault
-                                           Set.empty
-                                           (Dict.get sname subMultis)})
+          let
+            subWithMultis = Dict.map (\sname s ->
+                                     {s | multireddits = Maybe.withDefault
+                                                         Set.empty
+                                                         (Dict.get sname subMultis)})
+          in
+            subWithMultis <| Dict.union subreddits model.subreddits
       in {
         model
       | subreddits = newSubreddits
