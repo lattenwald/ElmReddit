@@ -24,6 +24,10 @@ li.subreddit.subscribed {
     color: green;
 }
 
+a {
+    color: inherit;
+}
+
 li.subreddit>ul.multireddits {
     display: inline;
     color: blue;

@@ -15,6 +15,7 @@ import Http exposing (stringData)
 import Json.Encode
 import Json.Decode exposing (at)
 import Set exposing (Set)
+import String exposing (join)
 
 import Utils exposing (..)
 import Types exposing (..)
@@ -232,7 +233,7 @@ view model =
       in
         li [ classList [ ("subreddit", True)
                        , ("subscribed", s.subscribed) ]
-           ] [ text s.link
+           ] [ a [href <| redditLink s.link] [text s.link]
              , ul [ class "multireddits" ] <| List.map viewMultiSub subMultis
              , button [onClick <| ChooseMulti s] [text "+"]
              , if s.subscribed
@@ -246,15 +247,22 @@ view model =
             Focus (FMulti mname) -> mname == m.name
             ChoosingMulti s _    -> s.name `Set.member` m.subreddits
             _                    -> False
+        link = redditLink <| "/r/"
+               ++ join "+" ( model.subreddits |>
+                               Dict.filter (\name _ -> Set.member name m.subreddits) |>
+                               Dict.map (\_ {display_name} -> display_name) |>
+                               Dict.values )
       in
         li [ classList [ ("multireddit", True)
                        , ("focused", focused) ]
-           , onClick <|
-               case model.state of
-                 ChoosingMulti subreddit returnFocus ->
-                   AddToMulti subreddit m returnFocus
-                 _ -> SetFocus (FMulti m.name)
-           ] [ text m.name ]
+           ] [ a [ href link ] [ text "-> " ]
+             , span [ onClick <|
+                        case model.state of
+                          ChoosingMulti subreddit returnFocus ->
+                          AddToMulti subreddit m returnFocus
+                          _ -> SetFocus (FMulti m.name)
+                    ] [text m.name]
+             ]
     viewOther focus text' =
       li [ onClick (SetFocus focus)
          , classList [ ("focused", model.state == Focus focus) ]
@@ -394,3 +402,6 @@ unsubscribe token subreddit =
   in
     API.post token GotError Unsubscribed "https://oauth.reddit.com/api/subscribe"
        body (fromJsonUnit { subreddit | subscribed = False })
+
+redditLink : String -> String
+redditLink link = "https://www.reddit.com" ++ link
