@@ -314,9 +314,9 @@ getToken code =
               , timeout         = Nothing
               , withCredentials = False
               , body            = Http.multipartBody
-                       [ Http.stringPart "grant_type" "authorization_code"
-                       , Http.stringPart "code" code
-                       , Http.stringPart "redirect_uri" Config.redirectUrl ]
+                                  [ Http.stringPart "grant_type" "authorization_code"
+                                  , Http.stringPart "code" code
+                                  , Http.stringPart "redirect_uri" Config.redirectUrl ]
               }
 
     handler resp =
