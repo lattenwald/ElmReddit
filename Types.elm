@@ -1,90 +1,126 @@
 module Types exposing (..)
 
 import Dict exposing (Dict)
-import Json.Decode as Json
-  exposing ( Decoder, object5, string, bool, succeed, (:=), at
-           , oneOf, null, object2, list, object3)
+import Json.Decode as Json exposing (at, string, bool, Decoder, oneOf, null, list)
 import Set exposing (Set)
+import Utils exposing (..)
 
-type alias SubredditName = String
-type alias MultiredditName = String
-type alias After = String
+type alias SubredditName =
+  String
+
+
+type alias MultiredditName =
+  String
+
+
+type alias After =
+  String
+
 
 type alias Subreddit =
-  { name         : SubredditName
+  { name : SubredditName
   , display_name : String
-  , subscribed   : Bool
-  , link         : String
-  , multireddits : Set MultiredditName }
+  , subscribed : Bool
+  , link : String
+  , multireddits : Set MultiredditName
+  }
+
 
 decodeSubreddit : Decoder Subreddit
 decodeSubreddit =
   let
-    decoder = object5 Subreddit
-              ("name"               := string)
-              ("display_name"       := string)
-              ("user_is_subscriber" := bool)
-              ("url"                := string)
-              (succeed Set.empty)
+    decoder =
+      Json.map5 Subreddit
+        ("name" := string)
+        ("display_name" := string)
+        ("user_is_subscriber" := bool)
+        ("url" := string)
+        (Json.succeed Set.empty)
   in
-    at ["data"] decoder
+    at [ "data" ] decoder
 
-type alias Subreddits = Dict SubredditName Subreddit
 
-decodeSubreddits : Decoder (Maybe After, Subreddits)
+type alias Subreddits =
+  Dict SubredditName Subreddit
+
+
+decodeSubreddits : Decoder ( Maybe After, Subreddits )
 decodeSubreddits =
   let
     nullOr : Decoder a -> Decoder (Maybe a)
     nullOr decoder =
       oneOf [ null Nothing, Json.map Just decoder ]
-    decoder = object2 (,)
-             ("after" := nullOr string)
-             (at ["children"] <|
-                Json.map (List.foldl
-                            (\item acc ->
-                               Dict.insert item.name item acc)
-                            Dict.empty) <|
-                list decodeSubreddit)
+
+    decoder =
+      Json.map2 (,)
+        ("after" := nullOr string)
+        (at [ "children" ] <|
+          Json.map
+            (List.foldl
+              (\item acc ->
+                Dict.insert item.name item acc
+              )
+              Dict.empty
+            )
+          <|
+            list decodeSubreddit
+        )
   in
-    at ["data"] decoder
+    at [ "data" ] decoder
+
 
 type alias Multireddit =
-  { name       : MultiredditName
-  , link       : String
-  , subreddits : Set SubredditName }
+  { name : MultiredditName
+  , link : String
+  , subreddits : Set SubredditName
+  }
 
-decodeMultireddit : Decoder (Multireddit, Subreddits)
+
+decodeMultireddit : Decoder ( Multireddit, Subreddits )
 decodeMultireddit =
   let
-    nameDecoder = ("name" := string)
+    nameDecoder =
+      ("name" := string)
+
     listToDict : List Subreddit -> Subreddits
     listToDict =
       let
-        folder item acc = Dict.insert item.name item acc
+        folder item acc =
+          Dict.insert item.name item acc
       in
         List.foldl folder Dict.empty
-    decoder' = object3 (,,)
-              ("name" := string)
-              ("path" := string)
-              ("subreddits" := list decodeSubreddit)
-    mapper (name, path, subs) =
+
+    decoder_ =
+      Json.map3 (,,)
+        ("name" := string)
+        ("path" := string)
+        ("subreddits" := list decodeSubreddit)
+
+    mapper ( name, path, subs ) =
       let
-        subNames = Set.fromList <| List.map .name subs
+        subNames =
+          Set.fromList <| List.map .name subs
       in
-        (Multireddit name path subNames, listToDict subs)
-    decoder = Json.map mapper decoder'
+        ( Multireddit name path subNames, listToDict subs )
+
+    decoder =
+      Json.map mapper decoder_
   in
-    at ["data"] decoder
+    at [ "data" ] decoder
 
-type alias Multireddits = Dict MultiredditName Multireddit
 
-decodeMultireddits : Decoder (Multireddits, Subreddits)
+type alias Multireddits =
+  Dict MultiredditName Multireddit
+
+
+decodeMultireddits : Decoder ( Multireddits, Subreddits )
 decodeMultireddits =
   let
-    folder (multi, subs) (accMultis, accSubs) =
+    folder ( multi, subs ) ( accMultis, accSubs ) =
       ( Dict.insert multi.name multi accMultis
-      , Dict.union subs accSubs )
+      , Dict.union subs accSubs
+      )
   in
     Json.map
-          (List.foldl folder (Dict.empty, Dict.empty))
-          (list decodeMultireddit)
+      (List.foldl folder ( Dict.empty, Dict.empty ))
+      (list decodeMultireddit)
