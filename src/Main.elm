@@ -61,7 +61,6 @@ type Msg
   | SetFocus Focused
   | ChooseMulti Subreddit
   | AddToMulti Subreddit Multireddit Focused
-    -- subreddit.display_name multireddit.link Focused
   | AddedToMulti Multireddit Subreddit
   | RemoveFromMulti Subreddit Multireddit
   | RemovedFromMulti Multireddit Subreddit

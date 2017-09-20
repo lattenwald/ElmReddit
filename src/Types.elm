@@ -1,7 +1,7 @@
 module Types exposing (..)
 
 import Dict exposing (Dict)
-import Json.Decode as Json exposing (at, string, bool, Decoder, oneOf, null, list)
+import Json.Decode as Json exposing (at, string, bool, Decoder, oneOf, null, list, maybe)
 import Set exposing (Set)
 import Utils exposing (..)
 
@@ -18,13 +18,15 @@ type alias After =
 
 
 type alias Subreddit =
-  { name : SubredditName
+  { name         : SubredditName
   , display_name : String
-  , subscribed : Bool
-  , link : String
+  , subscribed   : Bool
+  , link         : String
   , multireddits : Set MultiredditName
   }
 
+boolish : Decoder Bool
+boolish = Json.map (Maybe.withDefault False) (maybe bool)
 
 decodeSubreddit : Decoder Subreddit
 decodeSubreddit =
@@ -33,7 +35,7 @@ decodeSubreddit =
       Json.map5 Subreddit
         ("name" := string)
         ("display_name" := string)
-        ("user_is_subscriber" := bool)
+        ("user_is_subscriber" := boolish)
         ("url" := string)
         (Json.succeed Set.empty)
   in

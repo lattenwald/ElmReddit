@@ -283,8 +283,7 @@ parseUrlParams s =
         _ ->
           acc
   in
-    s
-      |> String.dropLeft 1
+    s |> String.dropLeft 1
       |> String.split "&"
       |> List.foldl folder Dict.empty
 
