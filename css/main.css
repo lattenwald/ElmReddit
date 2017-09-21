@@ -37,6 +37,10 @@ ul.menu>li.focused {
     background: #cfc;
 }
 
+ul.menu>li.dropHover {
+    background: cyan;
+}
+
 li.subreddit>ul.multireddits>li {
     display: inline;
     list-style: none;

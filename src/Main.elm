@@ -18,6 +18,7 @@ import String exposing (join)
 import Utils exposing (..)
 import Types exposing (..)
 
+import Html5.DragDrop as DragDrop
 
 type Focused
   = FNone
@@ -28,25 +29,22 @@ type Focused
   | FNotInMulti
 
 
-type State
-  = Focus Focused
-  | ChoosingMulti Subreddit Focused
-
-
 type alias Model =
-  { apidata : API.Model
-  , subreddits : Subreddits
+  { apidata      : API.Model
+  , subreddits   : Subreddits
   , multireddits : Multireddits
-  , state : State
+  , focus        : Focused
+  , dragDrop     : DragDrop.Model SubredditName MultiredditName
   }
 
 
 emptyModel : Model
 emptyModel =
-  { apidata = API.model
-  , subreddits = Dict.empty
+  { apidata      = API.model
+  , subreddits   = Dict.empty
   , multireddits = Dict.empty
-  , state = Focus FAll
+  , focus        = FAll
+  , dragDrop     = DragDrop.init
   }
 
 
@@ -59,7 +57,6 @@ type Msg
   | GotSubreddits ( Maybe After, Subreddits )
   | GotMultireddits ( Multireddits, Subreddits )
   | SetFocus Focused
-  | ChooseMulti Subreddit
   | AddToMulti Subreddit Multireddit Focused
   | AddedToMulti Multireddit Subreddit
   | RemoveFromMulti Subreddit Multireddit
@@ -68,6 +65,7 @@ type Msg
   | Subscribed Subreddit
   | Unsubscribe Subreddit
   | Unsubscribed Subreddit
+  | DragDropMsg (DragDrop.Msg SubredditName MultiredditName)
 
 
 main =
@@ -186,29 +184,10 @@ update msg model =
           ! [ Cmd.none ]
 
     SetFocus focused ->
-      { model
-        | state = Focus focused
-      }
-        ! [ Cmd.none ]
-
-    ChooseMulti subreddit ->
-      let
-        returnFocus =
-          case model.state of
-            Focus f ->
-              f
-
-            _ ->
-              FAll
-      in
-        { model
-          | state = ChoosingMulti subreddit returnFocus
-        }
-          ! [ Cmd.none ]
+      { model | focus = focused } ! [ Cmd.none ]
 
     AddToMulti subreddit multireddit returnFocus ->
-      { model
-        | state = Focus returnFocus
+      { model | focus = returnFocus
       } ! [ addToMulti model.apidata.token subreddit multireddit ]
 
     AddedToMulti m s ->
@@ -265,10 +244,22 @@ update msg model =
       }
         ! [ Cmd.none ]
 
+    DragDropMsg ddmsg ->
+      let (ddmodel, result) = DragDrop.update ddmsg model.dragDrop
+          cmds = result
+               |> Maybe.andThen (\ (sname, mname) ->
+                                   Maybe.map2 (,) (Dict.get sname model.subreddits) (Dict.get mname model.multireddits))
+               |> Maybe.map (\(s, m) -> [fire (AddToMulti s m model.focus)])
+               |> Maybe.withDefault []
+      in
+        { model | dragDrop = ddmodel } ! cmds
+
 
 view : Model -> Html Msg
 view model =
   let
+    dropId = DragDrop.getDropId model.dragDrop
+
     viewSubreddit s =
       let
         viewMultiSub m =
@@ -294,14 +285,13 @@ view model =
             Set.foldl folder [] s.multireddits
       in
         li
-          [ classList
-              [ ( "subreddit", True )
-              , ( "subscribed", s.subscribed )
-              ]
-          ]
+          ([ classList
+               [ ( "subreddit", True )
+               , ( "subscribed", s.subscribed )
+               ]
+           ] ++ DragDrop.draggable DragDropMsg s.name)
           [ a [ href <| redditLink s.link ] [ text s.link ]
           , ul [ class "multireddits" ] <| List.map viewMultiSub subMultis
-          , button [ onClick <| ChooseMulti s ] [ text "+" ]
           , if s.subscribed then
               button [ onClick <| Unsubscribe s ] [ text "unsub" ]
             else
@@ -311,15 +301,14 @@ view model =
     viewMultireddit m =
       let
         focused =
-          case model.state of
-            Focus (FMulti mname) ->
+          case model.focus of
+            FMulti mname ->
               mname == m.name
-
-            ChoosingMulti s _ ->
-              Set.member s.name m.subreddits
 
             _ ->
               False
+
+        dropHover = dropId |> Maybe.map ((==) m.name) |> Maybe.withDefault False
 
         link =
           redditLink <|
@@ -332,40 +321,34 @@ view model =
                   )
       in
         li
-          [ classList
-              [ ( "multireddit", True )
-              , ( "focused", focused )
-              ]
-          ]
+          ([ classList
+               [ ( "multireddit", True )
+               , ( "focused", focused )
+               , ( "dropHover", dropHover )
+               ]
+           ] ++ DragDrop.droppable DragDropMsg m.name)
           [ a [ href link ] [ text "-> " ]
           , span
-              [ onClick <|
-                  case model.state of
-                    ChoosingMulti subreddit returnFocus ->
-                      AddToMulti subreddit m returnFocus
-
-                    _ ->
-                      SetFocus (FMulti m.name)
-              ]
+              [ onClick <| SetFocus (FMulti m.name) ]
               [ text m.name ]
           ]
 
     viewOther focus text_ =
       li
         [ onClick (SetFocus focus)
-        , classList [ ( "focused", model.state == Focus focus ) ]
+        , classList [ ( "focused", model.focus == focus ) ]
         ]
         [ text text_ ]
 
     filteredSubreddits =
-      case model.state of
-        Focus FNone ->
+      case model.focus of
+        FNone ->
           []
 
-        Focus FAll ->
+        FAll ->
           Dict.values model.subreddits
 
-        Focus (FMulti mname) ->
+        FMulti mname ->
           let
             subredditNames =
               model.multireddits
@@ -380,13 +363,13 @@ view model =
           in
             subreddits
 
-        Focus FSubscribed ->
+        FSubscribed ->
           List.filter .subscribed <| Dict.values model.subreddits
 
-        Focus FNotSubscribed ->
+        FNotSubscribed ->
           List.filter (not << .subscribed) <| Dict.values model.subreddits
 
-        Focus FNotInMulti ->
+        FNotInMulti ->
           let
             folder _ { subreddits } acc =
               Set.foldl
@@ -404,9 +387,6 @@ view model =
               model.subreddits
               allInMulti
               []
-
-        ChoosingMulti subreddit _ ->
-          Dict.get subreddit.name model.subreddits |> maybeToList
 
     menu =
       ul [ class "menu" ]
@@ -504,7 +484,6 @@ addToMulti token subreddit multireddit =
       Http.multipartBody [ Http.stringPart "model" <| Json.Encode.encode 0 <| Json.Encode.object [ ( "name", Json.Encode.string subreddit.display_name ) ] ]
   in
     API.put token GotError (AddedToMulti multireddit) url body decoder
-
 
 removeFromMulti :
   Maybe API.Token
