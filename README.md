@@ -41,6 +41,9 @@ Just clone the repo.
 1. [Get](https://www.reddit.com/prefs/apps) reddit API key
 2. Put it into `src/Config.elm`
 
+Or you can create `src/Config.elm.secret` and run `./build.sh` script to build `elm.js`.
+Look into `build.sh`, it's straightforward
+
 Now you can run it on your domain, or do other fun stuff, probably.
 
 ## Caveats
