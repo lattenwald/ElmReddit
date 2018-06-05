@@ -36,6 +36,13 @@ Just clone the repo.
 2. Run `elm-reactor` from the same directory
 3. Navigate to `http://localhost:8000/index.html` in your browser
 
+## Tinkering
+
+1. [Get](https://www.reddit.com/prefs/apps) reddit API key
+2. Put it into `src/Config.elm`
+
+Now you can run it on your domain, or do other fun stuff, probably.
+
 ## Caveats
 
 It's work in progress, if it's not going to change then it's not going to work as intended.
