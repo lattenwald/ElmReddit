@@ -31,9 +31,9 @@ Just clone the repo.
 
 ## Running
 
-0. I am assuming you have `elm` installed
-1. Go to cloned repo and run `elm-make src/Main.elm --output elm.js`
-2. Run `elm-reactor` from same directory
+0. I am assuming you have [elm](https://www.npmjs.com/package/elm) installed
+1. Go to the cloned repo and run `elm-make src/Main.elm --output elm.js`
+2. Run `elm-reactor` from the same directory
 3. Navigate to `http://localhost:8000/index.html` in your browser
 
 ## Caveats
