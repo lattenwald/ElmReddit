@@ -1,128 +1,62 @@
 module Types exposing (..)
 
 import Dict exposing (Dict)
-import Json.Decode as Json exposing (at, string, bool, Decoder, oneOf, null, list, maybe)
-import Set exposing (Set)
-import Utils exposing (..)
-
-type alias SubredditName =
-  String
-
-
-type alias MultiredditName =
-  String
+import Json.Decode as JD exposing (Decoder, at, int, string)
+import Json.Encode as JE
 
 
 type alias After =
-  String
+    String
+
+type alias Token =
+    { access_token : String
+    , token_type : String
+    , scope : List String
+    }
+
+
+decodeToken : Decoder Token
+decodeToken =
+    JD.map3
+        Token
+        (at [ "access_token" ] string)
+        (at [ "token_type" ] string)
+        (at [ "scope" ] <| JD.map (String.split " ") string)
+
+encodeToken : Token -> JE.Value
+encodeToken token =
+    JE.object [ ("access_token", JE.string token.access_token)
+              , ("token_type", JE.string token.token_type)
+              , ("scope", JE.string <| String.join " " token.scope) ]
+
+
+type alias Identity =
+    { name : String
+    , link_karma : Int
+    , comment_karma : Int
+    }
+
+
+decodeIdentity : Decoder Identity
+decodeIdentity =
+    JD.map3
+        Identity
+        (at [ "name" ] string)
+        (at [ "link_karma" ] int)
+        (at [ "comment_karma" ] int)
+
+
+type alias SubredditName =
+    String
 
 
 type alias Subreddit =
-  { name         : SubredditName
-  , display_name : String
-  , subscribed   : Bool
-  , link         : String
-  , multireddits : Set MultiredditName
-  }
-
-boolish : Decoder Bool
-boolish = Json.map (Maybe.withDefault False) (maybe bool)
-
-decodeSubreddit : Decoder Subreddit
-decodeSubreddit =
-  let
-    decoder =
-      Json.map5 Subreddit
-        ("name" := string)
-        ("display_name" := string)
-        ("user_is_subscriber" := boolish)
-        ("url" := string)
-        (Json.succeed Set.empty)
-  in
-    at [ "data" ] decoder
+    { name : SubredditName
+    , display_name : String
+    , subscribed : Bool
+    , link : String
+    }
 
 
 type alias Subreddits =
-  Dict SubredditName Subreddit
-
-
-decodeSubreddits : Decoder ( Maybe After, Subreddits )
-decodeSubreddits =
-  let
-    nullOr : Decoder a -> Decoder (Maybe a)
-    nullOr decoder =
-      oneOf [ null Nothing, Json.map Just decoder ]
-
-    decoder =
-      Json.map2 (,)
-        ("after" := nullOr string)
-        (at [ "children" ] <|
-          Json.map
-            (List.foldl
-              (\item acc ->
-                Dict.insert item.name item acc
-              )
-              Dict.empty
-            )
-          <|
-            list decodeSubreddit
-        )
-  in
-    at [ "data" ] decoder
-
-
-type alias Multireddit =
-  { name : MultiredditName
-  , link : String
-  , subreddits : Set SubredditName
-  }
-
-
-decodeMultireddit : Decoder ( Multireddit, Subreddits )
-decodeMultireddit =
-  let
-    nameDecoder =
-      ("name" := string)
-
-    listToDict : List Subreddit -> Subreddits
-    listToDict =
-      let
-        folder item acc =
-          Dict.insert item.name item acc
-      in
-        List.foldl folder Dict.empty
-
-    decoder_ =
-      Json.map3 (,,)
-        ("name" := string)
-        ("path" := string)
-        ("subreddits" := list decodeSubreddit)
-
-    mapper ( name, path, subs ) =
-      let
-        subNames =
-          Set.fromList <| List.map .name subs
-      in
-        ( Multireddit name path subNames, listToDict subs )
-
-    decoder =
-      Json.map mapper decoder_
-  in
-    at [ "data" ] decoder
-
-
-type alias Multireddits =
-  Dict MultiredditName Multireddit
-
-
-decodeMultireddits : Decoder ( Multireddits, Subreddits )
-decodeMultireddits =
-  let
-    folder ( multi, subs ) ( accMultis, accSubs ) =
-      ( Dict.insert multi.name multi accMultis
-      , Dict.union subs accSubs
-      )
-  in
-    Json.map
-      (List.foldl folder ( Dict.empty, Dict.empty ))
-      (list decodeMultireddit)
+    Dict SubredditName Subreddit

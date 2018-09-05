@@ -1,537 +1,352 @@
-module Main exposing (..)
+port module Main exposing (..)
 
--- TODOOO features:
--- TODO create new multi
--- TODO remove empty multi
-
-import API
-import Navigation
-import Dict exposing (Dict)
+import Base64
+import Browser
+import Browser.Navigation as Nav
+import Config
+import Dict
 import Html exposing (..)
+import Html.Attributes exposing (class, classList, href, style)
 import Html.Events exposing (onClick)
-import Html.Attributes exposing (href, style, class, classList)
 import Http
-import Json.Encode
-import Json.Decode exposing (at)
-import Set exposing (Set)
-import String exposing (join)
-import Utils exposing (..)
+import Json.Decode as JD exposing (Decoder)
+import Json.Encode as JE
+import LocalStorage exposing (LocalStorage)
+import LocalStorage.SharedTypes as LS
+import Task
 import Types exposing (..)
-
-import Html5.DragDrop as DragDrop
-
-type Focused
-  = FNone
-  | FMulti MultiredditName
-  | FAll
-  | FSubscribed
-  | FNotSubscribed
-  | FNotInMulti
+import Url
 
 
 type alias Model =
-  { apidata      : API.Model
-  , subreddits   : Subreddits
-  , multireddits : Multireddits
-  , focus        : Focused
-  , dragDrop     : DragDrop.Model SubredditName MultiredditName
-  }
-
-
-emptyModel : Model
-emptyModel =
-  { apidata      = API.model
-  , subreddits   = Dict.empty
-  , multireddits = Dict.empty
-  , focus        = FAll
-  , dragDrop     = DragDrop.init
-  }
-
-
-type Msg
-  = Noop
-  | GotError Http.Error
-  | Api API.Msg
-  | Load
-  | GetSubreddits (Maybe After)
-  | GotSubreddits ( Maybe After, Subreddits )
-  | GotMultireddits ( Multireddits, Subreddits )
-  | SetFocus Focused
-  | AddToMulti Subreddit Multireddit Focused
-  | AddedToMulti Multireddit Subreddit
-  | RemoveFromMulti Subreddit Multireddit
-  | RemovedFromMulti Multireddit Subreddit
-  | Subscribe Subreddit
-  | Subscribed Subreddit
-  | Unsubscribe Subreddit
-  | Unsubscribed Subreddit
-  | DragDropMsg (DragDrop.Msg SubredditName MultiredditName)
-
-
-main =
-  Navigation.program (API.urlParser >> Api)
-    { init = init
-    , view = view
-    , update = update
-    , subscriptions = subscriptions
+    { token : Maybe Token
+    , identity : Maybe Identity
+    , subreddits : Subreddits
+    , key : Nav.Key
+    , storage : LocalStorage Msg
     }
 
 
-init : Navigation.Location -> ( Model, Cmd Msg )
-init loc =
-  let
-    ( apidata, cmd ) =
-      API.init loc
-  in
-    { emptyModel | apidata = apidata } ! [ Cmd.map Api cmd ]
+type Msg
+    = Noop
+    | GotError Http.Error
+    | GotCode String
+    | LoadToken
+    | GotToken Token
+    | GetIdentity
+    | GotIdentity Identity
+    | GetSubreddits (Maybe After)
+    | GotSubreddits ( Maybe After, Subreddits )
+    | ClickedLink Browser.UrlRequest
+    | UpdatePorts LS.Operation (Maybe (LS.Ports Msg)) LS.Key LS.Value
+
+
+ls_prefix =
+    "mfreddit"
+
+
+initPorts : LS.Ports Msg
+initPorts =
+    LocalStorage.makeRealPorts getItem setItem clear listKeys
+
+
+initModel key =
+    { token = Nothing
+    , identity = Nothing
+    , subreddits = Dict.empty
+    , key = key
+    , storage = LocalStorage.make initPorts ls_prefix
+    }
+
+
+init : () -> Url.Url -> Nav.Key -> ( Model, Cmd Msg )
+init _ url key =
+    let
+        model =
+            initModel
+    in
+    ( initModel key, fire <| urlParser url )
+
+
+tokenKey =
+    "token"
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
-  case msg of
-    Noop ->
-      model ! []
+    case msg of
+        Noop ->
+            ( model, Cmd.none )
 
-    GotError err ->
-      -- TODO show this somewhere but console
-      ignore (Debug.log "GotError" err) <|
-        model
-          ! [ Cmd.none ]
+        GotError err ->
+            ignore (Debug.log "GotError" err) <|
+                ( model, Cmd.none )
 
-    Api (API.Loaded) ->
-      model ! [ fire Load ]
+        GotCode code ->
+            ( model, getToken code )
 
-    Load ->
-      { model
-        | subreddits = Dict.empty
-        , multireddits = Dict.empty
-      }
-        ! [ fire (GetSubreddits Nothing) ]
+        GotToken token ->
+            ( { model | token = Just token }
+            , Cmd.batch
+                [ getIdentity (Just token)
+                , Nav.replaceUrl model.key "?"
+                , LocalStorage.setItem model.storage tokenKey (encodeToken token)
+                ]
+            )
 
-    Api msg ->
-      let
-        ( apidata, apimsg ) =
-          API.update msg model.apidata
-      in
-        { model
-          | apidata = apidata
-        }
-          ! [ Cmd.map Api apimsg ]
+        GotIdentity identity ->
+            ignore (Debug.log "IDTY" identity) <|
+                ( { model | identity = Just identity }, Cmd.none )
 
-    GetSubreddits after ->
-      model ! [ getSubreddits model.apidata.token after ]
+        ClickedLink urlRequest ->
+            case urlRequest of
+                Browser.External url ->
+                    ( model, Nav.load url )
 
-    GotSubreddits ( after, subreddits ) ->
-      { model
-        | subreddits = Dict.union subreddits model.subreddits
-      }
-        ! [ case after of
-              Nothing ->
-                getMultireddits model.apidata.token
+                Browser.Internal url ->
+                    ( model, Cmd.none )
 
-              Just a ->
-                getSubreddits model.apidata.token after
-          ]
-
-    GotMultireddits ( multireddits, subreddits ) ->
-      let
-        subMultis : Dict SubredditName (Set MultiredditName)
-        subMultis =
-          let
-            folder :
-              MultiredditName
-              -> Multireddit
-              -> Dict SubredditName (Set MultiredditName)
-              -> Dict SubredditName (Set MultiredditName)
-            folder mname { subreddits } acc =
-              let
-                folder_ :
-                  SubredditName
-                  -> Dict SubredditName (Set MultiredditName)
-                  -> Dict SubredditName (Set MultiredditName)
-                folder_ sname acc_ =
-                  Dict.insert sname
-                    (Maybe.withDefault (Set.singleton mname) <|
-                      Maybe.map (\set -> Set.insert mname set) <|
-                        Dict.get sname acc
-                    )
-                    acc_
-              in
-                Set.foldl folder_ acc subreddits
-          in
-            Dict.foldl folder Dict.empty multireddits
-
-        newSubreddits : Subreddits
-        newSubreddits =
-          let
-            subWithMultis =
-              Dict.map
-                (\sname s ->
-                  { s
-                    | multireddits =
-                        Maybe.withDefault
-                          Set.empty
-                          (Dict.get sname subMultis)
-                  }
-                )
-          in
-            subWithMultis <| Dict.union subreddits model.subreddits
-      in
-        { model
-          | subreddits = newSubreddits
-          , multireddits = multireddits
-        }
-          ! [ Cmd.none ]
-
-    SetFocus focused ->
-      { model | focus = focused } ! [ Cmd.none ]
-
-    AddToMulti subreddit multireddit returnFocus ->
-      { model | focus = returnFocus
-      } ! [ addToMulti model.apidata.token subreddit multireddit ]
-
-    AddedToMulti m s ->
-      let
-        newSub =
-          (\sub -> { sub | multireddits = Set.insert m.name sub.multireddits }) <|
-            Maybe.withDefault s <|
-              Dict.get s.name model.subreddits
-
-        newMulti =
-          (\multi -> { multi | subreddits = Set.insert s.name multi.subreddits }) <|
-            Maybe.withDefault m <|
-              Dict.get m.name model.multireddits
-      in
-        { model
-        | subreddits = Dict.insert newSub.name newSub model.subreddits
-        , multireddits = Dict.insert newMulti.name newMulti model.multireddits
-        } ! [ Cmd.none ]
-
-    RemoveFromMulti s m ->
-      model ! [ removeFromMulti model.apidata.token s m ]
-
-    RemovedFromMulti m s ->
-      let
-        subUpdater : Maybe Subreddit -> Maybe Subreddit
-        subUpdater =
-          Maybe.map (\s -> { s | multireddits = Set.remove m.name s.multireddits })
-
-        multiUpdater : Maybe Multireddit -> Maybe Multireddit
-        multiUpdater =
-          Maybe.map (\m -> { m | subreddits = Set.remove s.name m.subreddits })
-      in
-        { model
-          | subreddits = Dict.update s.name subUpdater model.subreddits
-          , multireddits = Dict.update m.name multiUpdater model.multireddits
-        }
-          ! [ Cmd.none ]
-
-    Subscribe s ->
-      model ! [ subscribe model.apidata.token s ]
-
-    Subscribed s ->
-      { model
-        | subreddits = Dict.insert s.name s model.subreddits
-      }
-        ! [ Cmd.none ]
-
-    Unsubscribe s ->
-      model ! [ unsubscribe model.apidata.token s ]
-
-    Unsubscribed s ->
-      { model
-        | subreddits = Dict.insert s.name s model.subreddits
-      }
-        ! [ Cmd.none ]
-
-    DragDropMsg ddmsg ->
-      let (ddmodel, result) = DragDrop.update ddmsg model.dragDrop
-          cmds = result
-               |> Maybe.andThen (\ (sname, mname) ->
-                                   Maybe.map2 (,) (Dict.get sname model.subreddits) (Dict.get mname model.multireddits))
-               |> Maybe.map (\(s, m) -> [fire (AddToMulti s m model.focus)])
-               |> Maybe.withDefault []
-      in
-        { model | dragDrop = ddmodel } ! cmds
-
-
-view : Model -> Html Msg
-view model =
-  let
-    dropId = DragDrop.getDropId model.dragDrop
-
-    viewSubreddit s =
-      let
-        viewMultiSub m =
-          li
-            []
-            [ text m.name
-            , button
-                [ onClick (RemoveFromMulti s m) ]
-                [ text "x" ]
-            ]
-
-        subMultis =
-          let
-            folder : MultiredditName -> List Multireddit -> List Multireddit
-            folder mname acc =
-              case Dict.get mname model.multireddits of
+        LoadToken ->
+            case model.token of
                 Nothing ->
-                  acc
+                    ( model, LocalStorage.getItem model.storage tokenKey )
 
-                Just m ->
-                  m :: acc
-          in
-            Set.foldl folder [] s.multireddits
-      in
-        li
-          ([ classList
-               [ ( "subreddit", True )
-               , ( "subscribed", s.subscribed )
-               ]
-           ] ++ DragDrop.draggable DragDropMsg s.name)
-          [ a [ href <| redditLink s.link ] [ text s.link ]
-          , ul [ class "multireddits" ] <| List.map viewMultiSub subMultis
-          , if s.subscribed then
-              button [ onClick <| Unsubscribe s ] [ text "unsub" ]
-            else
-              button [ onClick <| Subscribe s ] [ text "sub" ]
-          ]
+                _ ->
+                    ( model, Cmd.none )
 
-    viewMultireddit m =
-      let
-        focused =
-          case model.focus of
-            FMulti mname ->
-              mname == m.name
+        UpdatePorts operation ports key value ->
+            case operation of
+                LS.GetItemOperation ->
+                    let
+                        newToken =
+                            JD.decodeValue decodeToken value |> Result.toMaybe
+                    in
+                    case newToken of
+                        Nothing ->
+                            ( model, Cmd.none )
 
-            _ ->
-              False
+                        Just t ->
+                            ( { model | token = newToken }, fire <| GotToken t )
 
-        dropHover = dropId |> Maybe.map ((==) m.name) |> Maybe.withDefault False
+                _ ->
+                    ( model, Cmd.none )
 
-        link =
-          redditLink <|
-            "/r/"
-              ++ join "+"
-                  (model.subreddits
-                    |> Dict.filter (\name _ -> Set.member name m.subreddits)
-                    |> Dict.map (\_ { display_name } -> display_name)
-                    |> Dict.values
-                  )
-      in
-        li
-          ([ classList
-               [ ( "multireddit", True )
-               , ( "focused", focused )
-               , ( "dropHover", dropHover )
-               ]
-           ] ++ DragDrop.droppable DragDropMsg m.name)
-          [ a [ href link ] [ text "-> " ]
-          , span
-              [ onClick <| SetFocus (FMulti m.name) ]
-              [ text m.name ]
-          ]
-
-    viewOther focus text_ =
-      li
-        [ onClick (SetFocus focus)
-        , classList [ ( "focused", model.focus == focus ) ]
-        ]
-        [ text text_ ]
-
-    filteredSubreddits =
-      case model.focus of
-        FNone ->
-          []
-
-        FAll ->
-          Dict.values model.subreddits
-
-        FMulti mname ->
-          let
-            subredditNames =
-              model.multireddits
-                |> Dict.get mname
-                |> Maybe.map .subreddits
-                |> Maybe.withDefault Set.empty
-
-            subreddits =
-              model.subreddits
-                |> Dict.filter (\sname _ -> Set.member sname subredditNames)
-                |> Dict.values
-          in
-            subreddits
-
-        FSubscribed ->
-          List.filter .subscribed <| Dict.values model.subreddits
-
-        FNotSubscribed ->
-          List.filter (not << .subscribed) <| Dict.values model.subreddits
-
-        FNotInMulti ->
-          let
-            folder _ { subreddits } acc =
-              Set.foldl
-                (\item acc_ -> Dict.insert item item acc_)
-                acc
-                subreddits
-
-            allInMulti =
-              Dict.foldl folder Dict.empty model.multireddits
-          in
-            Dict.merge
-              (\_ s acc -> s :: acc)
-              (\_ _ _ acc -> acc)
-              (\_ _ acc -> acc)
-              model.subreddits
-              allInMulti
-              []
-
-    menu =
-      ul [ class "menu" ]
-        ([ viewOther FAll "All"
-         , viewOther FSubscribed "Subscribed"
-         , viewOther FNotSubscribed "Not subscribed"
-         , viewOther FNotInMulti "Not in multireddit"
-         ]
-          ++ (List.map viewMultireddit <|
-                List.sortBy .name <|
-                  Dict.values model.multireddits
-             )
-        )
-
-    content =
-      ul [ class "list" ] <|
-        List.map viewSubreddit <|
-          List.sortBy .link <|
-            filteredSubreddits
-  in
-    div []
-      [ Html.map Api (API.view model.apidata)
-      , case model.apidata.token of
-          Nothing ->
-            text ""
-
-          Just _ ->
-            div []
-              [ button [ onClick Load ] [ text "load" ]
-              , menu
-              , content
-              ]
-      ]
+        _ ->
+            ( model, Cmd.none )
 
 
-urlUpdate : Maybe API.Code -> Model -> ( Model, Cmd Msg )
-urlUpdate code model =
-  let
-    ( apidata, msg ) =
-      API.urlUpdate code model.apidata
-  in
-    { model
-      | apidata = apidata
+main =
+    Browser.application
+        { init = init
+        , view = view
+        , update = update
+        , subscriptions = subscriptions
+        , onUrlRequest = \_ -> Noop
+        , onUrlChange = urlParser
+        }
+
+
+port getItem : LS.GetItemPort msg
+
+
+port setItem : LS.SetItemPort msg
+
+
+port clear : LS.ClearPort msg
+
+
+port listKeys : LS.ListKeysPort msg
+
+
+port receiveItem : LS.ReceiveItemPort msg
+
+
+ignore : ignored -> a -> a
+ignore _ a =
+    a
+
+
+getIdentity : Maybe Token -> Cmd Msg
+getIdentity token =
+    get token GotError GotIdentity "https://oauth.reddit.com/api/v1/me" decodeIdentity
+
+
+getToken : String -> Cmd Msg
+getToken code =
+    let
+        url =
+            "https://www.reddit.com/api/v1/access_token"
+
+        authHeader =
+            Http.header "Authorization" ("Basic " ++ Base64.encode (Config.appId ++ ":"))
+
+        request =
+            Http.request
+                { method = "POST"
+                , url = url
+                , headers = [ authHeader ]
+                , expect = Http.expectJson decodeToken
+                , timeout = Nothing
+                , withCredentials = False
+                , body =
+                    Http.multipartBody
+                        [ Http.stringPart "grant_type" "authorization_code"
+                        , Http.stringPart "code" code
+                        , Http.stringPart "redirect_uri" Config.redirectUrl
+                        ]
+                }
+
+        handler resp =
+            case resp of
+                Err err ->
+                    GotError err
+
+                Ok token ->
+                    GotToken token
+    in
+    Http.send handler request
+
+
+view : Model -> Browser.Document Msg
+view model =
+    let
+        viewIdentity =
+            nav [ classList [ ( "navbar", True ), ( "navbar-expand-md", True ), ( "navbar-light", True ), ( "bg-light", True ) ] ]
+                [ case model.identity of
+                    Nothing ->
+                      a [ classList [ ( "btn", True ), ( "btn-primary", True ) ]
+                        , href authorizeUrl
+                        , onClick (ClickedLink (Browser.External authorizeUrl))
+                        ]
+                      [ text "authorize" ]
+
+                    Just idty ->
+                        a [ class "navbar-brand", href "#" ] [ text idty.name
+                                                             , text " ("
+                                                             , text <| String.fromInt idty.link_karma
+                                                             , text " · "
+                                                             , text <| String.fromInt idty.comment_karma
+                                                             , text ")"]
+                ]
+
+    in
+    { title = "MFReddit"
+    , body =
+        [ div [ class "fluid-container" ] [ viewIdentity ] ]
     }
-      ! [ Cmd.map Api msg ]
 
 
 subscriptions : Model -> Sub Msg
-subscriptions _ =
-  Sub.none
+subscriptions model =
+    let
+        prefix_ =
+            LocalStorage.getPrefix model.storage
+    in
+    receiveItem <| LS.receiveWrapper UpdatePorts prefix_
 
 
-getSubreddits : Maybe API.Token -> Maybe After -> Cmd Msg
-getSubreddits token after =
-  let
-    url_ =
-      url
-        "https://oauth.reddit.com/subreddits/mine/subscriber"
-      <|
-        maybeToList (Maybe.map (\a -> ( "after", a )) after)
-  in
-    API.get token GotError GotSubreddits url_ decodeSubreddits
+urlParser : Url.Url -> Msg
+urlParser loc =
+    loc.query
+        |> Maybe.andThen getCodeFromSearch
+        |> Maybe.map GotCode
+        |> Maybe.withDefault LoadToken
 
 
-getMultireddits : Maybe API.Token -> Cmd Msg
-getMultireddits token =
-  let
-    url_ =
-      url
-        "https://oauth.reddit.com/api/multi/mine"
-        [ ( "expand_srs", "1" ) ]
-  in
-    API.get token GotError GotMultireddits url_ decodeMultireddits
+get :
+    Maybe Token
+    -> (Http.Error -> msg)
+    -> (data -> msg)
+    -> String
+    -> Decoder data
+    -> Cmd msg
+get maybeToken fail handler url decoder =
+    let
+        request =
+            req "GET" url maybeToken Http.emptyBody (Http.expectJson decoder)
+
+        responseHandler resp =
+            case resp of
+                Err err ->
+                    fail err
+
+                Ok data ->
+                    handler data
+    in
+    Http.send responseHandler request
 
 
-addToMulti :
-  Maybe API.Token
-  -> Subreddit
-  -> Multireddit
-  -> Cmd Msg
-addToMulti token subreddit multireddit =
-  let
-    decoder : Json.Decode.Decoder Subreddit
-    decoder =
-      "name" := Json.Decode.string |> Json.Decode.andThen
-                (\decodedName ->
-                   if decodedName == subreddit.display_name
-                   then Json.Decode.succeed subreddit
-                   else Json.Decode.fail <| "expected \"name\" equal to \"" ++ subreddit.display_name ++ "\", got \"" ++ decodedName ++ "\"")
+authorizeUrl : String
+authorizeUrl =
+    let
+        endpoint =
+            "https://www.reddit.com/api/v1/authorize"
 
-    url =
-      "https://oauth.reddit.com/api/multi" ++ multireddit.link ++ "/r/" ++ subreddit.display_name
+        scopes =
+            [ "identity", "mysubreddits", "subscribe", "read" ]
 
-    body =
-      Http.multipartBody [ Http.stringPart "model" <| Json.Encode.encode 0 <| Json.Encode.object [ ( "name", Json.Encode.string subreddit.display_name ) ] ]
-  in
-    API.put token GotError (AddedToMulti multireddit) url body decoder
-
-removeFromMulti :
-  Maybe API.Token
-  -> Subreddit
-  -> Multireddit
-  -> Cmd Msg
-removeFromMulti token subreddit multireddit =
-  let
-    url =
-      "https://oauth.reddit.com/api/multi" ++ multireddit.link ++ "/r/" ++ subreddit.display_name
-  in
-    API.delete token GotError (RemovedFromMulti multireddit subreddit) url
+        params =
+            [ ( "client_id", Config.appId )
+            , ( "response_type", "code" )
+            , ( "redirect_uri", Config.redirectUrl )
+            , ( "duration", "temporary" )
+            , ( "scope", String.join "," scopes )
+            , ( "state", "none" )
+            ]
+    in
+    makeUrl endpoint params
 
 
-subscribe : Maybe API.Token -> Subreddit -> Cmd Msg
-subscribe token subreddit =
-  let
-    body =
-      Http.multipartBody
-        [ Http.stringPart "action" "sub"
-        , Http.stringPart "sr" subreddit.name
-        ]
-  in
-    API.post token
-      GotError
-      Subscribed
-      "https://oauth.reddit.com/api/subscribe"
-      body
-      (fromJsonUnit { subreddit | subscribed = True })
+getCodeFromSearch : String -> Maybe String
+getCodeFromSearch s =
+    let
+        params =
+            parseUrlParams s
+    in
+    Dict.get "code" params
 
 
-unsubscribe : Maybe API.Token -> Subreddit -> Cmd Msg
-unsubscribe token subreddit =
-  let
-    body =
-      Http.multipartBody
-        [ Http.stringPart "action" "unsub"
-        , Http.stringPart "sr" subreddit.name
-        ]
-  in
-    API.post token
-      GotError
-      Unsubscribed
-      "https://oauth.reddit.com/api/subscribe"
-      body
-      (fromJsonUnit { subreddit | subscribed = False })
+req :
+    String
+    -> String
+    -> Maybe Token
+    -> Http.Body
+    -> Http.Expect a
+    -> Http.Request a
+req method url maybeToken body expect =
+    Http.request
+        { method = method
+        , headers = [ Http.header "Authorization" ("bearer " ++ (maybeToken |> Maybe.map .access_token |> Maybe.withDefault "")) ]
+        , url = url
+        , body = body
+        , timeout = Nothing
+        , expect = expect
+        , withCredentials = False
+        }
 
 
-redditLink : String -> String
-redditLink link =
-  "https://www.reddit.com" ++ link
+makeUrl : String -> List ( String, String ) -> String
+makeUrl endpoint params =
+    endpoint ++ "?" ++ String.join "&" (List.map (\( k, v ) -> k ++ "=" ++ v) params)
+
+
+parseUrlParams : String -> Dict.Dict String String
+parseUrlParams s =
+    let
+        folder s_ acc =
+            case String.split "=" s_ of
+                [ k, v ] ->
+                    Dict.insert k v acc
+
+                _ ->
+                    acc
+    in
+    s
+        |> String.dropLeft 1
+        |> String.split "&"
+        |> List.foldl folder Dict.empty
+
+
+fire : a -> Cmd a
+fire msg =
+    Task.perform identity (Task.succeed msg)
