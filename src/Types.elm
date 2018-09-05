@@ -8,6 +8,7 @@ import Json.Encode as JE
 type alias After =
     String
 
+
 type alias Token =
     { access_token : String
     , token_type : String
@@ -23,11 +24,14 @@ decodeToken =
         (at [ "token_type" ] string)
         (at [ "scope" ] <| JD.map (String.split " ") string)
 
+
 encodeToken : Token -> JE.Value
 encodeToken token =
-    JE.object [ ("access_token", JE.string token.access_token)
-              , ("token_type", JE.string token.token_type)
-              , ("scope", JE.string <| String.join " " token.scope) ]
+    JE.object
+        [ ( "access_token", JE.string token.access_token )
+        , ( "token_type", JE.string token.token_type )
+        , ( "scope", JE.string <| String.join " " token.scope )
+        ]
 
 
 type alias Identity =
@@ -58,5 +62,52 @@ type alias Subreddit =
     }
 
 
+decodeSubreddit : Decoder Subreddit
+decodeSubreddit =
+    let
+        decoder =
+            JD.map4 Subreddit
+                (at [ "name" ] string)
+                (at [ "display_name" ] string)
+                (at [ "user_is_subscriber" ] boolish)
+                (at [ "url" ] string)
+    in
+    at [ "data" ] decoder
+
+
 type alias Subreddits =
     Dict SubredditName Subreddit
+
+
+decodeSubreddits : Decoder ( Maybe After, Subreddits )
+decodeSubreddits =
+    let
+        tup2 a b =
+            ( a, b )
+
+        decoder =
+            JD.map2 tup2
+                (at [ "after" ] <| nullOr string)
+                (at [ "children" ] <|
+                    JD.map
+                        (List.foldl
+                            (\item acc ->
+                                Dict.insert item.name item acc
+                            )
+                            Dict.empty
+                        )
+                    <|
+                        JD.list decodeSubreddit
+                )
+    in
+    at [ "data" ] decoder
+
+
+nullOr : Decoder a -> Decoder (Maybe a)
+nullOr decoder =
+    JD.oneOf [ JD.null Nothing, JD.map Just decoder ]
+
+
+boolish : Decoder Bool
+boolish =
+    JD.map (Maybe.withDefault False) (JD.maybe JD.bool)

@@ -96,7 +96,7 @@ update msg model =
 
         GotIdentity identity ->
             ignore (Debug.log "IDTY" identity) <|
-                ( { model | identity = Just identity }, Cmd.none )
+                ( { model | identity = Just identity }, fire <| GetSubreddits Nothing )
 
         ClickedLink urlRequest ->
             case urlRequest of
@@ -113,6 +113,23 @@ update msg model =
 
                 _ ->
                     ( model, Cmd.none )
+
+        GetSubreddits after ->
+            ( model, getSubreddits model.token after )
+
+        GotSubreddits ( after, subreddits ) ->
+            let
+                nextCommand =
+                    case after of
+                        Nothing ->
+                            Cmd.none
+
+                        Just _ ->
+                            getSubreddits model.token after
+            in
+            ( { model | subreddits = Dict.union subreddits model.subreddits }
+            , nextCommand
+            )
 
         UpdatePorts operation ports key value ->
             case operation of
@@ -214,25 +231,39 @@ view model =
             nav [ classList [ ( "navbar", True ), ( "navbar-expand-md", True ), ( "navbar-light", True ), ( "bg-light", True ) ] ]
                 [ case model.identity of
                     Nothing ->
-                      a [ classList [ ( "btn", True ), ( "btn-primary", True ) ]
-                        , href authorizeUrl
-                        , onClick (ClickedLink (Browser.External authorizeUrl))
-                        ]
-                      [ text "authorize" ]
+                        a
+                            [ classList [ ( "btn", True ), ( "btn-primary", True ) ]
+                            , href authorizeUrl
+                            , onClick (ClickedLink (Browser.External authorizeUrl))
+                            ]
+                            [ text "authorize" ]
 
                     Just idty ->
-                        a [ class "navbar-brand", href "#" ] [ text idty.name
-                                                             , text " ("
-                                                             , text <| String.fromInt idty.link_karma
-                                                             , text " · "
-                                                             , text <| String.fromInt idty.comment_karma
-                                                             , text ")"]
+                        a [ class "navbar-brand", href "#" ]
+                            [ text idty.name
+                            , text " ("
+                            , text <| String.fromInt idty.link_karma
+                            , text " · "
+                            , text <| String.fromInt idty.comment_karma
+                            , text ")"
+                            ]
                 ]
 
+        viewSubreddit subreddit =
+            div [ class "card" ]
+                [ div [ class "card-body" ]
+                    [ h4 [ class "card-title" ]
+                        [ text subreddit.link ]
+                    ]
+                ]
     in
     { title = "MFReddit"
     , body =
-        [ div [ class "fluid-container" ] [ viewIdentity ] ]
+        [ div [ class "fluid-container" ]
+            [ viewIdentity
+            , div [] (model.subreddits |> Dict.values |> List.sortBy .link |> List.map viewSubreddit)
+            ]
+        ]
     }
 
 
@@ -350,3 +381,25 @@ parseUrlParams s =
 fire : a -> Cmd a
 fire msg =
     Task.perform identity (Task.succeed msg)
+
+
+getSubreddits : Maybe Token -> Maybe After -> Cmd Msg
+getSubreddits token after =
+    let
+        url =
+            makeUrl
+                "https://oauth.reddit.com/subreddits/mine/subscriber"
+            <|
+                maybeToList (Maybe.map (\a -> ( "after", a )) after)
+    in
+    get token GotError GotSubreddits url decodeSubreddits
+
+
+maybeToList : Maybe a -> List a
+maybeToList a =
+    case a of
+        Nothing ->
+            []
+
+        Just b ->
+            [ b ]
