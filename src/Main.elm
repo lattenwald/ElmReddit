@@ -4,7 +4,7 @@ import Base64
 import Browser
 import Browser.Navigation as Nav
 import Config
-import Dict
+import Dict exposing (Dict)
 import Html exposing (..)
 import Html.Attributes exposing (class, classList, href, style)
 import Html.Events exposing (onClick)
@@ -13,15 +13,23 @@ import Json.Decode as JD exposing (Decoder)
 import Json.Encode as JE
 import LocalStorage exposing (LocalStorage)
 import LocalStorage.SharedTypes as LS
+import Set exposing (Set)
 import Task
 import Types exposing (..)
 import Url
+
+
+type Focused
+    = FNone
+    | FSub SubredditName
 
 
 type alias Model =
     { token : Maybe Token
     , identity : Maybe Identity
     , subreddits : Subreddits
+    , multireddits : Multireddits
+    , focus : Focused
     , key : Nav.Key
     , storage : LocalStorage Msg
     }
@@ -37,6 +45,8 @@ type Msg
     | GotIdentity Identity
     | GetSubreddits (Maybe After)
     | GotSubreddits ( Maybe After, Subreddits )
+    | GotMultireddits ( Multireddits, Subreddits )
+    | SetFocus Focused
     | ClickedLink Browser.UrlRequest
     | UpdatePorts LS.Operation (Maybe (LS.Ports Msg)) LS.Key LS.Value
 
@@ -54,6 +64,8 @@ initModel key =
     { token = Nothing
     , identity = Nothing
     , subreddits = Dict.empty
+    , multireddits = Dict.empty
+    , focus = FNone
     , key = key
     , storage = LocalStorage.make initPorts ls_prefix
     }
@@ -80,18 +92,19 @@ update msg model =
 
         GotError err ->
             ignore (Debug.log "GotError" err) <|
-            case err of
-                Http.BadStatus resp ->
-                    case resp.status.code of
-                        401 ->
-                            ( { model | token = Nothing }
-                            , LocalStorage.clear model.storage )
+                case err of
+                    Http.BadStatus resp ->
+                        case resp.status.code of
+                            401 ->
+                                ( { model | token = Nothing }
+                                , LocalStorage.clear model.storage
+                                )
 
-                        _ ->
-                            (model, Cmd.none)
+                            _ ->
+                                ( model, Cmd.none )
 
-                _ ->
-                    (model, Cmd.none)
+                    _ ->
+                        ( model, Cmd.none )
 
         GotCode code ->
             ( model, getToken code )
@@ -133,7 +146,7 @@ update msg model =
                 nextCommand =
                     case after of
                         Nothing ->
-                            Cmd.none
+                            getMultireddits model.token
 
                         Just _ ->
                             getSubreddits model.token after
@@ -141,6 +154,47 @@ update msg model =
             ( { model | subreddits = Dict.union subreddits model.subreddits }
             , nextCommand
             )
+
+        GotMultireddits ( multireddits, subreddits ) ->
+            let
+                subMultis : Dict SubredditName (Set MultiredditName)
+                subMultis =
+                    let
+                        folder :
+                            MultiredditName
+                            -> Multireddit
+                            -> Dict SubredditName (Set MultiredditName)
+                            -> Dict SubredditName (Set MultiredditName)
+                        folder mname multireddit acc =
+                            let
+                                folder_ :
+                                    SubredditName
+                                    -> Dict SubredditName (Set MultiredditName)
+                                    -> Dict SubredditName (Set MultiredditName)
+                                folder_ sname acc_ =
+                                    Dict.insert sname
+                                        (Maybe.withDefault (Set.singleton mname) <|
+                                            Maybe.map (\set -> Set.insert mname set) <|
+                                                Dict.get sname acc
+                                        )
+                                        acc_
+                            in
+                            Set.foldl folder_ acc multireddit.subreddits
+                    in
+                    Dict.foldl folder Dict.empty multireddits
+
+                newSubreddits : Subreddits
+                newSubreddits =
+                    let
+                        subWithMultis =
+                            Dict.map
+                                (\sname s ->
+                                    { s | multireddits = Maybe.withDefault Set.empty (Dict.get sname subMultis) }
+                                )
+                    in
+                    subWithMultis <| Dict.union subreddits model.subreddits
+            in
+            ( { model | subreddits = newSubreddits, multireddits = multireddits }, Cmd.none )
 
         UpdatePorts operation ports key value ->
             case operation of
@@ -158,6 +212,9 @@ update msg model =
 
                 _ ->
                     ( model, Cmd.none )
+
+        SetFocus newFocus ->
+            ( { model | focus = newFocus }, Cmd.none )
 
         _ ->
             ( model, Cmd.none )
@@ -239,7 +296,7 @@ view : Model -> Browser.Document Msg
 view model =
     let
         viewIdentity =
-            nav [ classList [ ( "navbar", True ), ( "navbar-expand-md", True ), ( "navbar-light", True ), ( "bg-light", True ) ] ]
+            nav [ classList [ ( "navbar", True ), ( "navbar-expand-md", True ), ( "navbar-light", True ), ( "bg-light", True ), ("fixed-top", True) ] ]
                 [ case model.identity of
                     Nothing ->
                         a
@@ -261,11 +318,37 @@ view model =
                 ]
 
         viewSubreddit subreddit =
-            div [ class "card" ]
+            let
+                isFocused =
+                    model.focus == FSub subreddit.name
+            in
+            div
+                [ classList [ ( "card", True ), ("pointer", True), ( "active", isFocused ) ]
+                , onClick
+                    (SetFocus
+                        (if isFocused then
+                            FNone
+
+                         else
+                            FSub subreddit.name
+                        )
+                    )
+                ]
                 [ div [ class "card-body" ]
-                    [ h4 [ class "card-title" ]
-                        [ text subreddit.link ]
-                    ]
+                    (if isFocused then
+                        [ div [ class "float-right" ] [ text (subreddit.multireddits |> Set.size |> String.fromInt) ]
+                        , h4 [ class "card-title" ]
+                            [ text subreddit.link ]
+                        , ul [ classList [ ( "list-group", True ), ( "list-group-flush", True ) ] ]
+                            (subreddit.multireddits |> Set.toList |> List.sort |> List.map (\m -> li [ class "list-group-item" ] [ text m ]))
+                        ]
+
+                     else
+                        [ div [ class "float-right" ] [ text (subreddit.multireddits |> Set.size |> String.fromInt) ]
+                        , h4 [ class "card-title" ]
+                            [ text subreddit.link ]
+                        ]
+                    )
                 ]
     in
     { title = "MFReddit"
@@ -404,6 +487,17 @@ getSubreddits token after =
                 maybeToList (Maybe.map (\a -> ( "after", a )) after)
     in
     get token GotError GotSubreddits url decodeSubreddits
+
+
+getMultireddits : Maybe Token -> Cmd Msg
+getMultireddits token =
+    let
+        url =
+            makeUrl
+                "https://oauth.reddit.com/api/multi/mine"
+                [ ( "expand_srs", "1" ) ]
+    in
+    get token GotError GotMultireddits url decodeMultireddits
 
 
 maybeToList : Maybe a -> List a

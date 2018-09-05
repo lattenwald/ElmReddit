@@ -3,6 +3,7 @@ module Types exposing (..)
 import Dict exposing (Dict)
 import Json.Decode as JD exposing (Decoder, at, int, string)
 import Json.Encode as JE
+import Set exposing (Set)
 
 
 type alias After =
@@ -54,11 +55,16 @@ type alias SubredditName =
     String
 
 
+type alias MultiredditName =
+    String
+
+
 type alias Subreddit =
     { name : SubredditName
     , display_name : String
     , subscribed : Bool
     , link : String
+    , multireddits : Set MultiredditName
     }
 
 
@@ -66,11 +72,12 @@ decodeSubreddit : Decoder Subreddit
 decodeSubreddit =
     let
         decoder =
-            JD.map4 Subreddit
+            JD.map5 Subreddit
                 (at [ "name" ] string)
                 (at [ "display_name" ] string)
                 (at [ "user_is_subscriber" ] boolish)
                 (at [ "url" ] string)
+                (JD.succeed Set.empty)
     in
     at [ "data" ] decoder
 
@@ -101,6 +108,66 @@ decodeSubreddits =
                 )
     in
     at [ "data" ] decoder
+
+
+type alias Multireddit =
+    { name : MultiredditName
+    , link : String
+    , subreddits : Set SubredditName
+    }
+
+
+decodeMultireddit : Decoder ( Multireddit, Subreddits )
+decodeMultireddit =
+    let
+        nameDecoder =
+            at [ "name" ] string
+
+        listToDict : List Subreddit -> Subreddits
+        listToDict =
+            let
+                folder item acc =
+                    Dict.insert item.name item acc
+            in
+            List.foldl folder Dict.empty
+
+        tup3 a b c =
+            ( a, b, c )
+
+        decoder_ =
+            JD.map3 tup3
+                (at [ "name" ] string)
+                (at [ "path" ] string)
+                (at [ "subreddits" ] <| JD.list decodeSubreddit)
+
+        mapper ( name, path, subs ) =
+            let
+                subNames =
+                    Set.fromList <| List.map .name subs
+            in
+            ( Multireddit name path subNames, listToDict subs )
+
+        decoder =
+            JD.map mapper decoder_
+    in
+    at [ "data" ] decoder
+
+
+type alias Multireddits =
+    Dict MultiredditName Multireddit
+
+
+decodeMultireddits : Decoder ( Multireddits, Subreddits )
+decodeMultireddits =
+    let
+        folder ( multi, subs ) ( accMultis, accSubs ) =
+            ( Dict.insert multi.name multi accMultis
+            , Dict.union subs accSubs
+            )
+    in
+    JD.map
+        (List.foldl folder ( Dict.empty, Dict.empty ))
+        (JD.list decodeMultireddit)
 
 
 nullOr : Decoder a -> Decoder (Maybe a)
