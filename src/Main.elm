@@ -80,7 +80,18 @@ update msg model =
 
         GotError err ->
             ignore (Debug.log "GotError" err) <|
-                ( model, Cmd.none )
+            case err of
+                Http.BadStatus resp ->
+                    case resp.status.code of
+                        401 ->
+                            ( { model | token = Nothing }
+                            , LocalStorage.clear model.storage )
+
+                        _ ->
+                            (model, Cmd.none)
+
+                _ ->
+                    (model, Cmd.none)
 
         GotCode code ->
             ( model, getToken code )
