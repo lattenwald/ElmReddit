@@ -317,46 +317,38 @@ view model =
                             ]
                 ]
 
+
+        viewFocusedSubreddit subreddit =
+            div [ classList [ ("card", True), ("pointer", True), ("bg-primary", True) ]
+                , onClick (SetFocus FNone) ]
+                [ div [ class "card-body"]
+                      [ div [ class "float-right" ] [ text (subreddit.multireddits |> Set.size |> String.fromInt) ]
+                      , h4 [ class "card-title" ] [ text subreddit.link ]
+                      , ul [ classList [ ( "list-group", True ), ( "list-group-flush", True ) ] ]
+                          (subreddit.multireddits |> Set.toList |> List.sort |> List.map (\m -> li [ class "list-group-item" ] [ text m ]))
+                      ] ]
+
+        viewNotFocusedSubreddit subreddit =
+            div [ classList [ ("card", True), ("pointer", True) ]
+                , onClick (SetFocus <| FSub subreddit.name) ]
+                [ div [ class "card-body"]
+                      [ div [ class "float-right" ] [ text (subreddit.multireddits |> Set.size |> String.fromInt) ]
+                      , h4 [ class "card-title" ] [ text subreddit.link ] ] ]
         viewSubreddit subreddit =
             let
                 isFocused =
                     model.focus == FSub subreddit.name
             in
-            div
-                [ classList [ ( "card", True ), ("pointer", True), ( "active", isFocused ) ]
-                , onClick
-                    (SetFocus
-                        (if isFocused then
-                            FNone
-
-                         else
-                            FSub subreddit.name
-                        )
-                    )
-                ]
-                [ div [ class "card-body" ]
-                    (if isFocused then
-                        [ div [ class "float-right" ] [ text (subreddit.multireddits |> Set.size |> String.fromInt) ]
-                        , h4 [ class "card-title" ]
-                            [ text subreddit.link ]
-                        , ul [ classList [ ( "list-group", True ), ( "list-group-flush", True ) ] ]
-                            (subreddit.multireddits |> Set.toList |> List.sort |> List.map (\m -> li [ class "list-group-item" ] [ text m ]))
-                        ]
-
-                     else
-                        [ div [ class "float-right" ] [ text (subreddit.multireddits |> Set.size |> String.fromInt) ]
-                        , h4 [ class "card-title" ]
-                            [ text subreddit.link ]
-                        ]
-                    )
-                ]
+                if isFocused then
+                    viewFocusedSubreddit subreddit
+                else
+                    viewNotFocusedSubreddit subreddit
     in
     { title = "MFReddit"
     , body =
-        [ div [ class "fluid-container" ]
-            [ viewIdentity
-            , div [] (model.subreddits |> Dict.values |> List.sortBy .link |> List.map viewSubreddit)
-            ]
+        [ viewIdentity
+        , main_ [ class "fluid-container" ]
+            [ div [] (model.subreddits |> Dict.values |> List.sortBy .link |> List.map viewSubreddit) ]
         ]
     }
 
