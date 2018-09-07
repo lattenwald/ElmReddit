@@ -317,16 +317,16 @@ view model =
                             ]
                 ]
 
-
         viewFocusedSubreddit subreddit =
-            div [ classList [ ("card", True), ("pointer", True), ("bg-primary", True) ]
+            div [ classList [ ("card", True), ("pointer", True), ("yellow", True), ("lighten-5", True) ]
                 , onClick (SetFocus FNone) ]
-                [ div [ class "card-body"]
+                [ div [ class "card-body"] (
                       [ div [ class "float-right" ] [ text (subreddit.multireddits |> Set.size |> String.fromInt) ]
                       , h4 [ class "card-title" ] [ text subreddit.link ]
-                      , ul [ classList [ ( "list-group", True ), ( "list-group-flush", True ) ] ]
-                          (subreddit.multireddits |> Set.toList |> List.sort |> List.map (\m -> li [ class "list-group-item" ] [ text m ]))
-                      ] ]
+                      ] ++ (subreddit.multireddits |> Set.toList |> List.sort
+                           |> List.map (\m -> a [ href (redditLink "/me/m/" ++ m), class "card-link" ]
+                                            [ text m ] ) ) )
+                ]
 
         viewNotFocusedSubreddit subreddit =
             div [ classList [ ("card", True), ("pointer", True) ]
@@ -500,3 +500,7 @@ maybeToList a =
 
         Just b ->
             [ b ]
+
+redditLink : String -> String
+redditLink link =
+    "https://old.reddit.com" ++ link
