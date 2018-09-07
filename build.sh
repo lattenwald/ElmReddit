@@ -1,5 +1,5 @@
 #!/bin/sh
-cp src/Config.elm src/Config.elm.bak && \
-cp src/Config.elm.secret src/Config.elm && \
+cp src/Config.elm Config.elm.bak && \
+cp Config.elm.secret src/Config.elm && \
 elm make src/Main.elm --output elm.js
-mv src/Config.elm.bak src/Config.elm
+mv Config.elm.bak src/Config.elm
