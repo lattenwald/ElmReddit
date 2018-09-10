@@ -6,3 +6,7 @@ body {
 .list-group-item {
     background-color: inherit;
 }
+
+.pointer {
+    cursor: pointer;
+}

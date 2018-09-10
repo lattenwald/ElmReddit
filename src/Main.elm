@@ -49,6 +49,7 @@ type Msg
     | GotSubreddits ( Maybe After, Subreddits )
     | GotMultireddits ( Multireddits, Subreddits )
     | SetFocus Focused
+    | ScrollTo Focused
     | ClickedLink Browser.UrlRequest
     | UpdatePorts LS.Operation (Maybe (LS.Ports Msg)) LS.Key LS.Value
 
@@ -216,17 +217,29 @@ update msg model =
                     ( model, Cmd.none )
 
         SetFocus newFocus ->
-            let scrollCommand = case newFocus of
-                         FSub maybeSubredditName -> maybeSubredditName
-                                                 |> Maybe.andThen (\s -> Dict.get s model.subreddits)
-                                                 |> Maybe.map (\s -> scrollTo (subredditId s))
-                                                 |> Maybe.withDefault Cmd.none
-                         FMulti maybeMultiredditName -> maybeMultiredditName
-                                                     |> Maybe.andThen (\m -> Dict.get m model.multireddits)
-                                                     |> Maybe.map (\m -> scrollTo (multiredditId m))
-                                                     |> Maybe.withDefault Cmd.none
-                         FNotInMulti -> scrollTo <| multiredditId <| mNotInMulti []
-                         FNotSubscribed -> scrollTo <| multiredditId <| mNotSubscribed []
+            ( { model | focus = newFocus }, Cmd.none )
+
+        ScrollTo newFocus ->
+            let
+                scrollCommand =
+                    case newFocus of
+                        FSub maybeSubredditName ->
+                            maybeSubredditName
+                                |> Maybe.andThen (\s -> Dict.get s model.subreddits)
+                                |> Maybe.map (\s -> scrollTo (subredditId s))
+                                |> Maybe.withDefault Cmd.none
+
+                        FMulti maybeMultiredditName ->
+                            maybeMultiredditName
+                                |> Maybe.andThen (\m -> Dict.get m model.multireddits)
+                                |> Maybe.map (\m -> scrollTo (multiredditId m))
+                                |> Maybe.withDefault Cmd.none
+
+                        FNotInMulti ->
+                            scrollTo <| multiredditId <| mNotInMulti []
+
+                        FNotSubscribed ->
+                            scrollTo <| multiredditId <| mNotSubscribed []
             in
             ( { model | focus = newFocus }, scrollCommand )
 
@@ -322,10 +335,17 @@ view model =
                         ]
 
                     Just idty ->
-                        let subs_tab = case model.focus of
-                                           FSub _ -> True
-                                           _ -> False
-                            multis_tab = not subs_tab
+                        let
+                            subs_tab =
+                                case model.focus of
+                                    FSub _ ->
+                                        True
+
+                                    _ ->
+                                        False
+
+                            multis_tab =
+                                not subs_tab
                         in
                         [ a [ class "navbar-brand", href "#" ]
                             [ text idty.name
@@ -335,49 +355,62 @@ view model =
                             , text <| String.fromInt idty.comment_karma
                             , text ")"
                             ]
-                        , ul [ classList [("nav", True), ("nav-tabs", True), ("flex-row", True)] ]
+                        , ul [ classList [ ( "nav", True ), ( "nav-tabs", True ), ( "flex-row", True ) ] ]
                             [ li [ class "nav-item" ]
-                                  [ a [ classList [("btn", True), ("btn-primary", subs_tab), ("text-dark", (not subs_tab))]
-                                      , href "#subs", onClick (SetFocus <| FSub Nothing) ]
-                                        [ text "Subs" ] ]
+                                [ a
+                                    [ classList [ ( "btn", True ), ( "btn-primary", subs_tab ), ( "text-dark", not subs_tab ) ]
+                                    , href "#subs"
+                                    , onClick (SetFocus <| FSub Nothing)
+                                    ]
+                                    [ text "Subs" ]
+                                ]
                             , li [ class "nav-item" ]
-                                  [ a [ classList [("btn", True), ("btn-primary", multis_tab), ("text-dark", (not multis_tab))]
-                                      , href "#multis", onClick (SetFocus <| FMulti Nothing) ]
-                                        [ text "Multis" ]
-                                  ]
+                                [ a
+                                    [ classList [ ( "btn", True ), ( "btn-primary", multis_tab ), ( "text-dark", not multis_tab ) ]
+                                    , href "#multis"
+                                    , onClick (SetFocus <| FMulti Nothing)
+                                    ]
+                                    [ text "Multis" ]
+                                ]
                             ]
                         ]
                 )
 
         viewFocusedSubreddit subreddit =
             div
-                [ id <| subredditId subreddit
-                , classList [ ( "card", True ), ( "pointer", True ), ( "yellow", True ), ( "lighten-5", True ) ] ]
-                [ div [ class "card-body" ]
-                    ([ div [ class "float-right" ] [ text (subreddit.multireddits |> Set.size |> String.fromInt) ]
-                     , h4 [ class "card-title", onClick (SetFocus (FSub Nothing)) ] [ text subreddit.link ] ]
-                        ++ (subreddit.multireddits
-                                |> Set.toList
-                                |> List.sort
-                                |> List.map
-                                    (\m ->
-                                        a [ href (redditLink "/me/m/" ++ m), class "card-link"
-                                          , onClick (SetFocus <| FMulti (Just m)) ]
-                                            [ text m ]
-                                    )
-                           )
+                [ id <| subredditId subreddit, class "card" ]
+                [ div
+                    [ classList [ ( "card-header", True ), ( "pointer", True ) ]
+                    , onClick <| SetFocus (FSub Nothing)
+                    ]
+                    [ div [ class "float-right" ] [ text (subreddit.multireddits |> Set.size |> String.fromInt) ]
+                    , text subreddit.link
+                    ]
+                , div [ class "card-body" ]
+                    (subreddit.multireddits
+                        |> Set.toList
+                        |> List.sort
+                        |> List.map
+                            (\m ->
+                                a
+                                    [ href (redditLink "/me/m/" ++ m)
+                                    , class "card-link"
+                                    , onClick (ScrollTo <| FMulti (Just m))
+                                    ]
+                                    [ text m ]
+                            )
                     )
                 ]
 
         viewNotFocusedSubreddit subreddit =
             div
-                [ id <| subredditId subreddit
-                , classList [ ( "card", True ), ( "pointer", True ) ]
-                , onClick (SetFocus <| FSub (Just subreddit.name))
-                ]
-                [ div [ class "card-body" ]
+                [ id <| subredditId subreddit, class "card" ]
+                [ div
+                    [ classList [ ( "card-header", True ), ( "pointer", True ) ]
+                    , onClick (SetFocus <| FSub (Just subreddit.name))
+                    ]
                     [ div [ class "float-right" ] [ text (subreddit.multireddits |> Set.size |> String.fromInt) ]
-                    , h4 [ class "card-title" ] [ text subreddit.link ]
+                    , text subreddit.link
                     ]
                 ]
 
@@ -393,36 +426,45 @@ view model =
                 viewNotFocusedSubreddit subreddit
 
         viewSubsTab =
-            div [ id "subs" ] (model.subreddits |> Dict.values |> List.sortBy .link |> List.map viewSubreddit)
+            div [ id "subs" ] (model.subreddits |> Dict.values |> List.sortBy (.link >> String.toLower) |> List.map viewSubreddit)
 
         viewFocusedMultireddit multireddit =
             div
-                [ id <| multiredditId multireddit
-                , classList [ ( "card", True ), ( "pointer", True ), ( "yellow", True ), ( "lighten-5", True ) ] ]
-                [ div [ class "card-body" ]
-                    ([ h4 [ class "card-title", onClick (SetFocus (FMulti Nothing)) ] [ text multireddit.name ] ]
-                        ++ (multireddit.subreddits
-                                |> Set.toList
-                                |> List.filterMap (\sname -> Dict.get sname model.subreddits)
-                                |> List.sortBy .display_name
-                                |> List.map
-                                    (\s ->
-                                        a [ href (redditLink "/r/" ++ s.display_name), class "card-link"
-                                          , onClick (SetFocus <| FSub (Just s.name)) ]
-                                            [ text s.display_name ]
-                                    )
-                           )
+                [ id <| multiredditId multireddit, class "card" ]
+                [ div
+                    [ classList [ ( "card-header", True ), ( "pointer", True ) ]
+                    , onClick (SetFocus <| FMulti Nothing)
+                    ]
+                    [ div [ class "float-right" ] [ text (multireddit.subreddits |> Set.size |> String.fromInt) ]
+                    , text multireddit.name
+                    ]
+                , div [ class "card-body" ]
+                    (multireddit.subreddits
+                        |> Set.toList
+                        |> List.filterMap (\sname -> Dict.get sname model.subreddits)
+                        |> List.sortBy (.display_name >> String.toLower)
+                        |> List.map
+                            (\s ->
+                                a
+                                    [ href (redditLink "/r/" ++ s.display_name)
+                                    , class "card-link"
+                                    , onClick (ScrollTo <| FSub (Just s.name))
+                                    ]
+                                    [ text s.display_name ]
+                            )
                     )
                 ]
 
         viewNotFocusedMultireddit multireddit =
             div
-                [ id <| multiredditId multireddit
-                , classList [ ( "card", True ), ( "pointer", True ) ]
-                , onClick (SetFocus <| FMulti (Just multireddit.name))
-                ]
-                [ div [ class "card-body" ]
-                    [ h4 [ class "carad-title" ] [ text multireddit.name ] ]
+                [ id <| multiredditId multireddit, class "card" ]
+                [ div
+                    [ classList [ ( "card-header", True ), ( "pointer", True ) ]
+                    , onClick (SetFocus <| FMulti (Just multireddit.name))
+                    ]
+                    [ div [ class "float-right" ] [ text (multireddit.subreddits |> Set.size |> String.fromInt) ]
+                    , text multireddit.name
+                    ]
                 ]
 
         viewMultireddit multireddit =
@@ -436,28 +478,12 @@ view model =
             else
                 viewNotFocusedMultireddit multireddit
 
-        -- mNotInMulti =
-        --     { name = "not in multireddit"
-        --     , subreddits = List.filterMap (\s -> if Set.isEmpty s.multireddits
-        --                                          then Just s.name
-        --                                          else Nothing)
-        --                    (Dict.values model.subreddits) |> Set.fromList
-        --     , link = ""
-        --     }
-
-        -- mNotSubscribed =
-        --     { name = "not subscribed"
-        --     , subreddits = List.filterMap (\s -> if not s.subscribed
-        --                                          then Just s.name
-        --                                          else Nothing)
-        --                    (Dict.values model.subreddits) |> Set.fromList
-        --     , link = ""
-        --     }
-
         viewMultisTab =
-            let multiNames = model.multireddits |> Dict.values |> List.sortBy .name
+            let
+                multiNames =
+                    model.multireddits |> Dict.values |> List.sortBy (.name >> String.toLower)
             in
-            div [ id "multis" ] ( (mNotInMulti (Dict.values model.subreddits) :: mNotSubscribed (Dict.values model.subreddits) :: multiNames) |> List.map viewMultireddit)
+            div [ id "multis" ] ((mNotInMulti (Dict.values model.subreddits) :: mNotSubscribed (Dict.values model.subreddits) :: multiNames) |> List.map viewMultireddit)
     in
     { title = "MFReddit"
     , body =
@@ -468,10 +494,10 @@ view model =
                     viewSubsTab
 
                 FNotInMulti ->
-                  viewMultisTab
+                    viewMultisTab
 
                 FNotSubscribed ->
-                  viewMultisTab
+                    viewMultisTab
 
                 FMulti _ ->
                     viewMultisTab
@@ -633,30 +659,52 @@ redditLink : String -> String
 redditLink link =
     "https://old.reddit.com" ++ link
 
+
 unspace : String -> String
 unspace str =
     str |> String.split " " |> String.join "_"
 
-subredditId s = "s-" ++ unspace s.name
-multiredditId m = "m-" ++ unspace m.name
+
+subredditId s =
+    "s-" ++ unspace s.name
+
+
+multiredditId m =
+    "m-" ++ unspace m.name
+
 
 port scrollTo : String -> Cmd msg
 
 
 mNotInMulti subreddits =
     { name = "not in multireddit"
-    , subreddits = List.filterMap (\s -> if Set.isEmpty s.multireddits
-                                         then Just s.name
-                                         else Nothing)
-                   subreddits |> Set.fromList
+    , subreddits =
+        List.filterMap
+            (\s ->
+                if Set.isEmpty s.multireddits then
+                    Just s.name
+
+                else
+                    Nothing
+            )
+            subreddits
+            |> Set.fromList
     , link = ""
     }
 
+
 mNotSubscribed subreddits =
     { name = "not subscribed"
-    , subreddits = List.filterMap (\s -> if not s.subscribed
-                                         then Just s.name
-                                         else Nothing)
-                   subreddits |> Set.fromList
+    , subreddits =
+        List.filterMap
+            (\s ->
+                if not s.subscribed then
+                    Just s.name
+
+                else
+                    Nothing
+            )
+            subreddits
+            |> Set.fromList
     , link = ""
     }
