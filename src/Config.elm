@@ -2,8 +2,7 @@ module Config exposing (redirectUrl, appId)
 
 
 redirectUrl : String
-redirectUrl =
-  -- "http://localhost:8000/src/Main.elm"
+redirectUrl = --
   "http://localhost:8000/index.html"
 
 
