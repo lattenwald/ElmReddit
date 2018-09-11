@@ -32,6 +32,7 @@ type alias Model =
     , subreddits : Subreddits
     , multireddits : Multireddits
     , focus : Focused
+    , choosingMultiForSub : Maybe Subreddit
     , key : Nav.Key
     , storage : LocalStorage Msg
     }
@@ -50,6 +51,9 @@ type Msg
     | GotMultireddits ( Multireddits, Subreddits )
     | SetFocus Focused
     | ScrollTo Focused
+    | ChooseMultiForSub Subreddit
+    | AddSubToMulti Subreddit Multireddit
+    | AddedSubToMulti Multireddit Subreddit
     | ClickedLink Browser.UrlRequest
     | UpdatePorts LS.Operation (Maybe (LS.Ports Msg)) LS.Key LS.Value
 
@@ -69,6 +73,7 @@ initModel key =
     , subreddits = Dict.empty
     , multireddits = Dict.empty
     , focus = FSub Nothing
+    , choosingMultiForSub = Nothing
     , key = key
     , storage = LocalStorage.make initPorts ls_prefix
     }
@@ -246,6 +251,38 @@ update msg model =
         GetIdentity ->
             ( model, getIdentity model.token )
 
+        ChooseMultiForSub s ->
+            ( { model | choosingMultiForSub = Just s, focus = FMulti Nothing }, Cmd.none )
+
+        AddSubToMulti s m ->
+            ( { model | choosingMultiForSub = Nothing, focus = FSub (Just s.name) }
+            , addToMulti model.token s m
+            )
+
+        AddedSubToMulti m s ->
+            let
+                oldSub =
+                    Dict.get s.name model.subreddits |> Maybe.withDefault s
+
+                newSub =
+                    { oldSub | multireddits = Set.insert m.name oldSub.multireddits }
+
+                newSubs =
+                    Dict.insert newSub.name newSub model.subreddits
+
+                oldMulti =
+                    Dict.get m.name model.multireddits |> Maybe.withDefault m
+
+                newMulti =
+                    { oldMulti | subreddits = Set.insert s.name oldMulti.subreddits }
+
+                newMultis =
+                    Dict.insert newMulti.name newMulti model.multireddits
+            in
+            ( { model | subreddits = newSubs, multireddits = newMultis }
+            , Cmd.none
+            )
+
 
 main =
     Browser.application
@@ -322,58 +359,96 @@ getToken code =
 view : Model -> Browser.Document Msg
 view model =
     let
-        viewIdentity =
-            nav [ classList [ ( "navbar", True ), ( "navbar-expand-md", True ), ( "navbar-light", True ), ( "bg-light", True ), ( "fixed-top", True ) ] ]
+        viewNavbar =
+            let
+                viewAuthButton =
+                    a
+                        [ classList [ ( "btn", True ), ( "btn-primary", True ) ]
+                        , href authorizeUrl
+                        , onClick (ClickedLink (Browser.External authorizeUrl))
+                        ]
+                        [ text "authorize" ]
+
+                viewIdentity idty =
+                    a [ class "navbar-brand", href "#" ]
+                        [ text idty.name
+                        , text " ("
+                        , text <| String.fromInt idty.link_karma
+                        , text " · "
+                        , text <| String.fromInt idty.comment_karma
+                        , text ")"
+                        ]
+
+                viewNavbarItems =
+                    case model.choosingMultiForSub of
+                        Nothing ->
+                            let
+                                subs_tab =
+                                    case model.focus of
+                                        FSub _ ->
+                                            True
+
+                                        _ ->
+                                            False
+
+                                multis_tab =
+                                    not subs_tab
+                            in
+                            ul [ classList [ ( "nav", True ), ( "nav-tabs", True ), ( "flex-row", True ) ] ]
+                                [ li [ class "nav-item" ]
+                                    [ a
+                                        [ classList
+                                            [ ( "btn", True )
+                                            , ( "btn-primary", subs_tab )
+                                            , ( "text-dark", not subs_tab )
+                                            ]
+                                        , href "#subs"
+                                        , onClick (SetFocus <| FSub Nothing)
+                                        ]
+                                        [ text "Subs" ]
+                                    ]
+                                , li [ class "nav-item" ]
+                                    [ a
+                                        [ classList
+                                            [ ( "btn", True )
+                                            , ( "btn-primary", multis_tab )
+                                            , ( "text-dark", not multis_tab )
+                                            ]
+                                        , href "#multis"
+                                        , onClick (SetFocus <| FMulti Nothing)
+                                        ]
+                                        [ text "Multis" ]
+                                    ]
+                                ]
+
+                        Just s ->
+                            span
+                                [ classList
+                                    [ ( "text-dark", True )
+                                    , ( "navbar-text", True )
+                                    , ( "yellow", True )
+                                    , ( "lighten-5", True )
+                                    , ( "px-5", True )
+                                    ]
+                                , onClick <| SetFocus <| FSub <| Just s.name
+                                ]
+                                [ text <| "Add " ++ s.link ++ " to multireddit:" ]
+            in
+            nav
+                [ classList
+                    [ ( "navbar", True )
+                    , ( "navbar-expand-md", True )
+                    , ( "navbar-light", True )
+                    , ( "bg-light", True )
+                    , ( "fixed-top", True )
+                    ]
+                ]
                 (case model.identity of
                     Nothing ->
-                        [ a
-                            [ classList [ ( "btn", True ), ( "btn-primary", True ) ]
-                            , href authorizeUrl
-                            , onClick (ClickedLink (Browser.External authorizeUrl))
-                            ]
-                            [ text "authorize" ]
-                        ]
+                        [ viewAuthButton ]
 
                     Just idty ->
-                        let
-                            subs_tab =
-                                case model.focus of
-                                    FSub _ ->
-                                        True
-
-                                    _ ->
-                                        False
-
-                            multis_tab =
-                                not subs_tab
-                        in
-                        [ a [ class "navbar-brand", href "#" ]
-                            [ text idty.name
-                            , text " ("
-                            , text <| String.fromInt idty.link_karma
-                            , text " · "
-                            , text <| String.fromInt idty.comment_karma
-                            , text ")"
-                            ]
-                        , ul [ classList [ ( "nav", True ), ( "nav-tabs", True ), ( "flex-row", True ) ] ]
-                            [ li [ class "nav-item" ]
-                                [ a
-                                    [ classList [ ( "btn", True ), ( "btn-primary", subs_tab ), ( "text-dark", not subs_tab ) ]
-                                    , href "#subs"
-                                    , onClick (SetFocus <| FSub Nothing)
-                                    ]
-                                    [ text "Subs" ]
-                                ]
-                            , li [ class "nav-item" ]
-                                [ a
-                                    [ classList [ ( "btn", True ), ( "btn-primary", multis_tab ), ( "text-dark", not multis_tab ) ]
-                                    , href "#multis"
-                                    , onClick (SetFocus <| FMulti Nothing)
-                                    ]
-                                    [ text "Multis" ]
-                                ]
-                            ]
-                        ]
+                        viewIdentity idty :: viewNavbarItems :: []
                 )
 
         viewFocusedSubreddit subreddit =
@@ -387,18 +462,20 @@ view model =
                     , text subreddit.link
                     ]
                 , div [ class "card-body" ]
-                    (subreddit.multireddits
-                        |> Set.toList
-                        |> List.sort
-                        |> List.map
-                            (\m ->
-                                a
-                                    [ href (redditLink "/me/m/" ++ m)
-                                    , class "card-link"
-                                    , onClick (ScrollTo <| FMulti (Just m))
-                                    ]
-                                    [ text m ]
-                            )
+                    (a [ href "#", class "card-link", onClick (ChooseMultiForSub subreddit) ] [ text "✚" ]
+                        :: (subreddit.multireddits
+                                |> Set.toList
+                                |> List.sort
+                                |> List.map
+                                    (\m ->
+                                        a
+                                            [ href (redditLink "/me/m/" ++ m)
+                                            , class "card-link"
+                                            , onClick (ScrollTo <| FMulti (Just m))
+                                            ]
+                                            [ text m ]
+                                    )
+                           )
                     )
                 ]
 
@@ -467,6 +544,17 @@ view model =
                     ]
                 ]
 
+        viewMultiredditToAdd subreddit multireddit =
+            div [ class "card" ]
+                [ div
+                    [ classList [ ( "card-header", True ), ( "pointer", True ) ]
+                    , onClick (AddSubToMulti subreddit multireddit)
+                    ]
+                    [ div [ class "float-right" ] [ text (multireddit.subreddits |> Set.size |> String.fromInt) ]
+                    , text <| "✚ " ++ multireddit.name
+                    ]
+                ]
+
         viewMultireddit multireddit =
             let
                 isFocused =
@@ -482,12 +570,20 @@ view model =
             let
                 multiNames =
                     model.multireddits |> Dict.values |> List.sortBy (.name >> String.toLower)
+
+                viewMultisList =
+                    case model.choosingMultiForSub of
+                        Nothing ->
+                            (mNotInMulti (Dict.values model.subreddits) :: mNotSubscribed (Dict.values model.subreddits) :: multiNames) |> List.map viewMultireddit
+
+                        Just s ->
+                            multiNames |> List.map (viewMultiredditToAdd s)
             in
-            div [ id "multis" ] ((mNotInMulti (Dict.values model.subreddits) :: mNotSubscribed (Dict.values model.subreddits) :: multiNames) |> List.map viewMultireddit)
+            div [ id "multis" ] viewMultisList
     in
     { title = "MFReddit"
     , body =
-        [ viewIdentity
+        [ viewNavbar
         , main_ [ class "fluid-container" ]
             [ case model.focus of
                 FSub _ ->
@@ -542,6 +638,23 @@ get maybeToken fail handler url decoder =
 
                 Ok data ->
                     handler data
+    in
+    Http.send responseHandler request
+
+
+put : Maybe Token -> (Http.Error -> msg) -> (data -> msg) -> String -> Http.Body -> Decoder data -> Cmd msg
+put maybeToken fail success url body decoder =
+    let
+        request =
+            req "PUT" url maybeToken body (Http.expectJson decoder)
+
+        responseHandler resp =
+            case resp of
+                Err err ->
+                    fail err
+
+                Ok data ->
+                    success data
     in
     Http.send responseHandler request
 
@@ -645,6 +758,11 @@ getMultireddits token =
     get token GotError GotMultireddits url decodeMultireddits
 
 
+setFocus : Focused -> Cmd Msg
+setFocus newFocus =
+    Cmd.map (\_ -> SetFocus newFocus) Cmd.none
+
+
 maybeToList : Maybe a -> List a
 maybeToList a =
     case a of
@@ -708,3 +826,27 @@ mNotSubscribed subreddits =
             |> Set.fromList
     , link = ""
     }
+
+
+addToMulti : Maybe Token -> Subreddit -> Multireddit -> Cmd Msg
+addToMulti token subreddit multireddit =
+    let
+        url =
+            "https://oauth.reddit.com/api/multi" ++ multireddit.link ++ "/r/" ++ subreddit.display_name
+
+        body =
+            Http.multipartBody [ Http.stringPart "model" <| JE.encode 0 <| JE.object [ ( "name", JE.string subreddit.display_name ) ] ]
+
+        decoder : JD.Decoder Subreddit
+        decoder =
+            JD.at [ "name" ] JD.string
+                |> JD.andThen
+                    (\decodedName ->
+                        if decodedName == subreddit.display_name then
+                            JD.succeed subreddit
+
+                        else
+                            JD.fail <| "expected \"name\" equal to \"" ++ subreddit.display_name ++ "\", hot \"" ++ decodedName ++ "\""
+                    )
+    in
+    put token GotError (AddedSubToMulti multireddit) url body decoder
