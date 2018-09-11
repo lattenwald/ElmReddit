@@ -4,7 +4,7 @@
 
 This currently runs on [MFReddit](https://www.mfreddit.app)!
 
-To be Reddit susbcriptions manager. UI done with [MDB](https://mdbootstrap.com/).
+To be Reddit susbcriptions manager. UI optimized for mobile, done with [MDB](https://mdbootstrap.com/).
 
 Following actions supported:
 
