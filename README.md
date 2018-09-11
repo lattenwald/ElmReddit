@@ -2,7 +2,7 @@
 
 ## What is it
 
-To be Reddit susbcriptions manager. Ugly, to be better.
+To be Reddit susbcriptions manager. UI done with [MDB](https://mdbootstrap.com/).
 
 Following actions supported:
 
@@ -31,9 +31,9 @@ Just clone the repo.
 
 ## Running
 
-0. I am assuming you have [elm](https://www.npmjs.com/package/elm) installed
-1. Go to the cloned repo and run `elm-make src/Main.elm --output elm.js`
-2. Run `elm-reactor` from the same directory
+0. I am assuming you have [elm 0.19](https://www.npmjs.com/package/elm) installed
+1. Go to the cloned repo and run `elm make src/Main.elm --output elm.js`
+2. Run `elm reactor` from the same directory
 3. Navigate to `http://localhost:8000/index.html` in your browser
 
 ## Tinkering
@@ -41,11 +41,7 @@ Just clone the repo.
 1. [Get](https://www.reddit.com/prefs/apps) reddit API key
 2. Put it into `src/Config.elm`
 
-Or you can create `src/Config.elm.secret` and run `./build.sh` script to build `elm.js`.
+Or you can create `./Config.elm.secret` and run `./build.sh` script to build `elm.js`.
 Look into `build.sh`, it's straightforward
 
 Now you can run it on your domain, or do other fun stuff, probably.
-
-## Caveats
-
-It's work in progress, if it's not going to change then it's not going to work as intended.
