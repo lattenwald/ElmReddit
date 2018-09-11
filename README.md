@@ -2,6 +2,8 @@
 
 ## What is it
 
+This currently runs on [MFReddit](https://www.mfreddit.app)!
+
 To be Reddit susbcriptions manager. UI done with [MDB](https://mdbootstrap.com/).
 
 Following actions supported:
