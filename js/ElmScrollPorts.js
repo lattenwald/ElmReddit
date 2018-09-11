@@ -10,12 +10,13 @@ var ElmScrollPorts = {};
       console.log("scrolling to element id " + id);
       var delay = 300;
       setTimeout(function() {
+        var navbarHeight = document.getElementById("navbar").clientHeight;
         var el = document.getElementById(id);
         el.scrollIntoView({
           behaviour: "smooth",
           block: "start"
         });
-        window.scrollBy(0, -100);
+        window.scrollBy(0, -navbarHeight);
       }, delay);
     })
   }

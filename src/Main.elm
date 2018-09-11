@@ -54,6 +54,8 @@ type Msg
     | ChooseMultiForSub Subreddit
     | AddSubToMulti Subreddit Multireddit
     | AddedSubToMulti Multireddit Subreddit
+    | RemoveSubFromMulti Subreddit Multireddit
+    | RemovedSubFromMulti Multireddit Subreddit
     | ClickedLink Browser.UrlRequest
     | UpdatePorts LS.Operation (Maybe (LS.Ports Msg)) LS.Key LS.Value
 
@@ -222,7 +224,7 @@ update msg model =
                     ( model, Cmd.none )
 
         SetFocus newFocus ->
-            ( { model | focus = newFocus }, Cmd.none )
+            ( { model | focus = newFocus, choosingMultiForSub = Nothing }, Cmd.none )
 
         ScrollTo newFocus ->
             let
@@ -254,9 +256,9 @@ update msg model =
         ChooseMultiForSub s ->
             ( { model | choosingMultiForSub = Just s, focus = FMulti Nothing }, Cmd.none )
 
-        AddSubToMulti s m ->
-            ( { model | choosingMultiForSub = Nothing, focus = FSub (Just s.name) }
-            , addToMulti model.token s m
+        AddSubToMulti subreddit multireddit ->
+            ( { model | choosingMultiForSub = Nothing, focus = FSub (Just subreddit.name) }
+            , addToMulti model.token subreddit multireddit
             )
 
         AddedSubToMulti m s ->
@@ -282,6 +284,25 @@ update msg model =
             ( { model | subreddits = newSubs, multireddits = newMultis }
             , Cmd.none
             )
+
+        RemoveSubFromMulti subreddit multireddit ->
+            ( model, removeSubFromMulti model.token subreddit multireddit )
+
+        RemovedSubFromMulti multireddit subreddit ->
+            let
+                subUpdater s =
+                    { s | multireddits = Set.remove multireddit.name s.multireddits }
+
+                newSubs =
+                    Dict.update subreddit.name (Maybe.map subUpdater) model.subreddits
+
+                multiUpdater m =
+                    { m | subreddits = Set.remove subreddit.name m.subreddits }
+
+                newMultis =
+                    Dict.update multireddit.name (Maybe.map multiUpdater) model.multireddits
+            in
+            ( { model | subreddits = newSubs, multireddits = newMultis }, Cmd.none )
 
 
 main =
@@ -429,18 +450,20 @@ view model =
                                     , ( "yellow", True )
                                     , ( "lighten-5", True )
                                     , ( "px-5", True )
+                                    , ( "pointer", True )
                                     ]
                                 , onClick <| SetFocus <| FSub <| Just s.name
                                 ]
-                                [ text <| "Add " ++ s.link ++ " to multireddit:" ]
+                                [ text <| "Cancel adding " ++ s.link ++ " to multireddit" ]
             in
             nav
-                [ classList
+                [ id "navbar"
+                , classList
                     [ ( "navbar", True )
                     , ( "navbar-expand-md", True )
                     , ( "navbar-light", True )
                     , ( "bg-light", True )
-                    , ( "fixed-top", True )
+                    , ( "sticky-top", True )
                     ]
                 ]
                 (case model.identity of
@@ -452,6 +475,27 @@ view model =
                 )
 
         viewFocusedSubreddit subreddit =
+            let
+                multireddits =
+                    subreddit.multireddits
+                        |> Set.toList
+                        |> List.filterMap (\mname -> Dict.get mname model.multireddits)
+
+                viewMulti multireddit =
+                    [ a
+                        [ href (redditLink "/me/m/" ++ multireddit.name)
+                        , class "card-link"
+                        , onClick (ScrollTo <| FMulti (Just multireddit.name))
+                        ]
+                        [ text multireddit.name ]
+                    , a
+                        [ classList [ ( "card-link", True ), ( "ml-1", True ) ]
+                        , href "#"
+                        , onClick (RemoveSubFromMulti subreddit multireddit)
+                        ]
+                        [ text "⨯" ]
+                    ]
+            in
             div
                 [ id <| subredditId subreddit, class "card" ]
                 [ div
@@ -463,18 +507,9 @@ view model =
                     ]
                 , div [ class "card-body" ]
                     (a [ href "#", class "card-link", onClick (ChooseMultiForSub subreddit) ] [ text "✚" ]
-                        :: (subreddit.multireddits
-                                |> Set.toList
-                                |> List.sort
-                                |> List.map
-                                    (\m ->
-                                        a
-                                            [ href (redditLink "/me/m/" ++ m)
-                                            , class "card-link"
-                                            , onClick (ScrollTo <| FMulti (Just m))
-                                            ]
-                                            [ text m ]
-                                    )
+                        :: (multireddits
+                                |> List.sortBy (.name >> String.toLower)
+                                |> List.concatMap viewMulti
                            )
                     )
                 ]
@@ -850,3 +885,34 @@ addToMulti token subreddit multireddit =
                     )
     in
     put token GotError (AddedSubToMulti multireddit) url body decoder
+
+
+removeSubFromMulti : Maybe Token -> Subreddit -> Multireddit -> Cmd Msg
+removeSubFromMulti token subreddit multireddit =
+    let
+        url =
+            "https://oauth.reddit.com/api/multi" ++ multireddit.link ++ "/r/" ++ subreddit.display_name
+    in
+    delete token GotError (RemovedSubFromMulti multireddit subreddit) url
+
+
+delete :
+    Maybe Token
+    -> (Http.Error -> msg)
+    -> msg
+    -> String
+    -> Cmd msg
+delete maybeToken fail success url =
+    let
+        request =
+            req "DELETE" url maybeToken Http.emptyBody Http.expectString
+
+        responseHandler resp =
+            case resp of
+                Err err ->
+                    fail err
+
+                Ok _ ->
+                    success
+    in
+    Http.send responseHandler request
