@@ -56,6 +56,10 @@ type Msg
     | AddedSubToMulti Multireddit Subreddit
     | RemoveSubFromMulti Subreddit Multireddit
     | RemovedSubFromMulti Multireddit Subreddit
+    | Subscribe Subreddit
+    | Subscribed Subreddit
+    | Unsubscribe Subreddit
+    | Unsubscribed Subreddit
     | ClickedLink Browser.UrlRequest
     | UpdatePorts LS.Operation (Maybe (LS.Ports Msg)) LS.Key LS.Value
 
@@ -304,6 +308,22 @@ update msg model =
             in
             ( { model | subreddits = newSubs, multireddits = newMultis }, Cmd.none )
 
+        Unsubscribe subreddit ->
+            ( model, unsubscribe model.token subreddit )
+
+        Unsubscribed subreddit ->
+            ( { model | subreddits = Dict.insert subreddit.name subreddit model.subreddits }
+            , Cmd.none
+            )
+
+        Subscribe subreddit ->
+            ( model, subscribe model.token subreddit )
+
+        Subscribed subreddit ->
+            ( { model | subreddits = Dict.insert subreddit.name subreddit model.subreddits }
+            , Cmd.none
+            )
+
 
 main =
     Browser.application
@@ -503,7 +523,13 @@ view model =
                     , onClick <| SetFocus (FSub Nothing)
                     ]
                     [ div [ class "float-right" ] [ text (subreddit.multireddits |> Set.size |> String.fromInt) ]
-                    , text subreddit.link
+                    , span
+                        [ classList
+                            [ ( "text-muted", not subreddit.subscribed )
+                            , ( "font-italic", not subreddit.subscribed )
+                            ]
+                        ]
+                        [ text subreddit.link ]
                     ]
                 , div [ class "card-body" ]
                     (a [ href "#", class "card-link", onClick (ChooseMultiForSub subreddit) ] [ text "✚" ]
@@ -522,7 +548,13 @@ view model =
                     , onClick (SetFocus <| FSub (Just subreddit.name))
                     ]
                     [ div [ class "float-right" ] [ text (subreddit.multireddits |> Set.size |> String.fromInt) ]
-                    , text subreddit.link
+                    , span
+                        [ classList
+                            [ ( "text-muted", not subreddit.subscribed )
+                            , ( "font-italic", not subreddit.subscribed )
+                            ]
+                        ]
+                        [ text subreddit.link ]
                     ]
                 ]
 
@@ -541,6 +573,33 @@ view model =
             div [ id "subs" ] (model.subreddits |> Dict.values |> List.sortBy (.link >> String.toLower) |> List.map viewSubreddit)
 
         viewFocusedMultireddit multireddit =
+            let
+                subOrUnsub subreddit =
+                    let
+                        ( msg, txt ) =
+                            if subreddit.subscribed then
+                                ( Unsubscribe subreddit, "⨯" )
+
+                            else
+                                ( Subscribe subreddit, "＋" )
+                    in
+                    a
+                        [ classList [ ( "card-link", True ), ( "ml-1", True ) ]
+                        , onClick msg
+                        , href "#"
+                        ]
+                        [ text txt ]
+
+                viewSub subreddit =
+                    [ a
+                        [ href (redditLink "/r/" ++ subreddit.display_name)
+                        , class "card-link"
+                        , onClick (ScrollTo <| FSub (Just subreddit.name))
+                        ]
+                        [ text subreddit.display_name ]
+                    , subOrUnsub subreddit
+                    ]
+            in
             div
                 [ id <| multiredditId multireddit, class "card" ]
                 [ div
@@ -555,15 +614,7 @@ view model =
                         |> Set.toList
                         |> List.filterMap (\sname -> Dict.get sname model.subreddits)
                         |> List.sortBy (.display_name >> String.toLower)
-                        |> List.map
-                            (\s ->
-                                a
-                                    [ href (redditLink "/r/" ++ s.display_name)
-                                    , class "card-link"
-                                    , onClick (ScrollTo <| FSub (Just s.name))
-                                    ]
-                                    [ text s.display_name ]
-                            )
+                        |> List.concatMap viewSub
                     )
                 ]
 
@@ -916,3 +967,74 @@ delete maybeToken fail success url =
                     success
     in
     Http.send responseHandler request
+
+
+subscribe : Maybe Token -> Subreddit -> Cmd Msg
+subscribe token subreddit =
+    let
+        body =
+            Http.multipartBody
+                [ Http.stringPart "action" "sub"
+                , Http.stringPart "sr" subreddit.name
+                ]
+    in
+    post token
+        GotError
+        Subscribed
+        "https://oauth.reddit.com/api/subscribe"
+        body
+        (fromJsonUnit { subreddit | subscribed = True })
+
+
+fromJsonUnit : a -> JD.Decoder a
+fromJsonUnit val =
+    JD.dict JD.string
+        |> JD.andThen
+            (\dict ->
+                if Dict.isEmpty dict then
+                    JD.succeed val
+
+                else
+                    JD.fail "expected empty JSON object"
+            )
+
+
+post :
+    Maybe Token
+    -> (Http.Error -> msg)
+    -> (data -> msg)
+    -> String
+    -> Http.Body
+    -> Decoder data
+    -> Cmd msg
+post maybeToken fail success url body decoder =
+    let
+        request =
+            req "POST" url maybeToken body (Http.expectJson decoder)
+
+        responseHandler resp =
+            case resp of
+                Err err ->
+                    fail err
+
+                Ok data ->
+                    success data
+    in
+    Http.send responseHandler request
+
+
+unsubscribe : Maybe Token -> Subreddit -> Cmd Msg
+unsubscribe token subreddit =
+    let
+        body =
+            Http.multipartBody
+                [ Http.stringPart "action" "unsub"
+                , Http.stringPart "sr" subreddit.name
+                ]
+    in
+    post token
+        GotError
+        Unsubscribed
+        "https://oauth.reddit.com/api/subscribe"
+        body
+        (fromJsonUnit { subreddit | subscribed = False })
