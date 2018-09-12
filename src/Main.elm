@@ -14,7 +14,6 @@ import Json.Encode as JE
 import LocalStorage exposing (LocalStorage)
 import LocalStorage.SharedTypes as LS
 import Set exposing (Set)
-import Task
 import Types exposing (..)
 import Url
 import Utils exposing (..)
@@ -350,11 +349,6 @@ port listKeys : LS.ListKeysPort msg
 
 
 port receiveItem : LS.ReceiveItemPort msg
-
-
-ignore : ignored -> a -> a
-ignore _ a =
-    a
 
 
 getIdentity : Maybe Token -> Cmd Msg
@@ -736,11 +730,6 @@ getCodeFromSearch s =
     Dict.get "code" params
 
 
-makeUrl : String -> List ( String, String ) -> String
-makeUrl endpoint params =
-    endpoint ++ "?" ++ String.join "&" (List.map (\( k, v ) -> k ++ "=" ++ v) params)
-
-
 parseUrlParams : String -> Dict.Dict String String
 parseUrlParams s =
     let
@@ -756,11 +745,6 @@ parseUrlParams s =
         |> String.dropLeft 1
         |> String.split "&"
         |> List.foldl folder Dict.empty
-
-
-fire : a -> Cmd a
-fire msg =
-    Task.perform identity (Task.succeed msg)
 
 
 getSubreddits : Maybe Token -> Maybe After -> Cmd Msg
@@ -791,24 +775,9 @@ setFocus newFocus =
     Cmd.map (\_ -> SetFocus newFocus) Cmd.none
 
 
-maybeToList : Maybe a -> List a
-maybeToList a =
-    case a of
-        Nothing ->
-            []
-
-        Just b ->
-            [ b ]
-
-
 redditLink : String -> String
 redditLink link =
     "https://old.reddit.com" ++ link
-
-
-unspace : String -> String
-unspace str =
-    str |> String.split " " |> String.join "_"
 
 
 subredditId s =

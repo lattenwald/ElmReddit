@@ -1,7 +1,8 @@
-module Utils exposing (delete, get, post, put)
+module Utils exposing (delete, fire, get, ignore, makeUrl, maybeToList, post, put, unspace)
 
 import Http
 import Json.Decode as JD exposing (Decoder)
+import Task
 import Types exposing (Token)
 
 
@@ -108,3 +109,33 @@ req method url maybeToken body expect =
         , expect = expect
         , withCredentials = False
         }
+
+
+ignore : ignored -> a -> a
+ignore _ a =
+    a
+
+
+makeUrl : String -> List ( String, String ) -> String
+makeUrl endpoint params =
+    endpoint ++ "?" ++ String.join "&" (List.map (\( k, v ) -> k ++ "=" ++ v) params)
+
+
+fire : a -> Cmd a
+fire msg =
+    Task.perform identity (Task.succeed msg)
+
+
+maybeToList : Maybe a -> List a
+maybeToList a =
+    case a of
+        Nothing ->
+            []
+
+        Just b ->
+            [ b ]
+
+
+unspace : String -> String
+unspace str =
+    str |> String.split " " |> String.join "_"
