@@ -504,7 +504,7 @@ view model =
                         ]
                         [ text multireddit.name ]
                     , a
-                        [ classList [ ( "card-link", True ), ( "ml-1", True ) ]
+                        [ classList [ ( "card-link", True ), ( "ml-1", True ), ( "text-dark", True ) ]
                         , href "#"
                         , onClick (RemoveSubFromMulti subreddit multireddit)
                         ]
@@ -614,14 +614,19 @@ view model =
                 ]
 
         viewNotFocusedMultireddit multireddit =
+            let
+                subreddits =
+                    multireddit.subreddits |> Set.toList |> List.filterMap (\s -> Dict.get s model.subreddits)
+            in
             div
                 [ id <| multiredditId multireddit, class "card" ]
                 [ div
                     [ classList [ ( "card-header", True ), ( "pointer", True ) ]
                     , onClick (SetFocus <| FMulti (Just multireddit.name))
                     ]
-                    [ div [ class "float-right" ] [ text (multireddit.subreddits |> Set.size |> String.fromInt) ]
-                    , text multireddit.name
+                    [ div [ class "float-right" ] [ text (subreddits |> List.length |> String.fromInt) ]
+                    , a [ class "text-dark", href (redditLink <| "/r/" ++ String.join "+" (subreddits |> List.map .display_name)) ]
+                        [ text multireddit.name ]
                     ]
                 ]
 
