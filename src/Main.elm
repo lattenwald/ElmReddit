@@ -499,7 +499,7 @@ view model =
                 viewMulti multireddit =
                     [ a
                         [ href (redditLink "/me/m/" ++ multireddit.name)
-                        , class "card-link"
+                        , classList [ ( "card-link", True ), ( "text-dark", True ) ]
                         , onClick (ScrollTo <| FMulti (Just multireddit.name))
                         ]
                         [ text multireddit.name ]
