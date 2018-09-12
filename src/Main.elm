@@ -17,6 +17,7 @@ import Set exposing (Set)
 import Task
 import Types exposing (..)
 import Url
+import Utils exposing (..)
 
 
 type Focused
@@ -705,46 +706,6 @@ urlParser loc =
         |> Maybe.withDefault LoadToken
 
 
-get :
-    Maybe Token
-    -> (Http.Error -> msg)
-    -> (data -> msg)
-    -> String
-    -> Decoder data
-    -> Cmd msg
-get maybeToken fail handler url decoder =
-    let
-        request =
-            req "GET" url maybeToken Http.emptyBody (Http.expectJson decoder)
-
-        responseHandler resp =
-            case resp of
-                Err err ->
-                    fail err
-
-                Ok data ->
-                    handler data
-    in
-    Http.send responseHandler request
-
-
-put : Maybe Token -> (Http.Error -> msg) -> (data -> msg) -> String -> Http.Body -> Decoder data -> Cmd msg
-put maybeToken fail success url body decoder =
-    let
-        request =
-            req "PUT" url maybeToken body (Http.expectJson decoder)
-
-        responseHandler resp =
-            case resp of
-                Err err ->
-                    fail err
-
-                Ok data ->
-                    success data
-    in
-    Http.send responseHandler request
-
-
 authorizeUrl : String
 authorizeUrl =
     let
@@ -773,25 +734,6 @@ getCodeFromSearch s =
             parseUrlParams s
     in
     Dict.get "code" params
-
-
-req :
-    String
-    -> String
-    -> Maybe Token
-    -> Http.Body
-    -> Http.Expect a
-    -> Http.Request a
-req method url maybeToken body expect =
-    Http.request
-        { method = method
-        , headers = [ Http.header "Authorization" ("bearer " ++ (maybeToken |> Maybe.map .access_token |> Maybe.withDefault "")) ]
-        , url = url
-        , body = body
-        , timeout = Nothing
-        , expect = expect
-        , withCredentials = False
-        }
 
 
 makeUrl : String -> List ( String, String ) -> String
@@ -947,28 +889,6 @@ removeSubFromMulti token subreddit multireddit =
     delete token GotError (RemovedSubFromMulti multireddit subreddit) url
 
 
-delete :
-    Maybe Token
-    -> (Http.Error -> msg)
-    -> msg
-    -> String
-    -> Cmd msg
-delete maybeToken fail success url =
-    let
-        request =
-            req "DELETE" url maybeToken Http.emptyBody Http.expectString
-
-        responseHandler resp =
-            case resp of
-                Err err ->
-                    fail err
-
-                Ok _ ->
-                    success
-    in
-    Http.send responseHandler request
-
-
 subscribe : Maybe Token -> Subreddit -> Cmd Msg
 subscribe token subreddit =
     let
@@ -997,30 +917,6 @@ fromJsonUnit val =
                 else
                     JD.fail "expected empty JSON object"
             )
-
-
-post :
-    Maybe Token
-    -> (Http.Error -> msg)
-    -> (data -> msg)
-    -> String
-    -> Http.Body
-    -> Decoder data
-    -> Cmd msg
-post maybeToken fail success url body decoder =
-    let
-        request =
-            req "POST" url maybeToken body (Http.expectJson decoder)
-
-        responseHandler resp =
-            case resp of
-                Err err ->
-                    fail err
-
-                Ok data ->
-                    success data
-    in
-    Http.send responseHandler request
 
 
 unsubscribe : Maybe Token -> Subreddit -> Cmd Msg
