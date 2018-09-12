@@ -579,7 +579,7 @@ view model =
                                 ( Subscribe subreddit, "＋" )
                     in
                     a
-                        [ classList [ ( "card-link", True ), ( "ml-1", True ) ]
+                        [ classList [ ( "card-link", True ), ( "ml-1", True ), ( "text-dark", subreddit.subscribed ), ( "text-muted", not subreddit.subscribed ) ]
                         , onClick msg
                         , href "#"
                         ]
@@ -588,7 +588,7 @@ view model =
                 viewSub subreddit =
                     [ a
                         [ href (redditLink "/r/" ++ subreddit.display_name)
-                        , class "card-link"
+                        , classList [ ( "card-link", True ), ( "text-dark", subreddit.subscribed ), ( "text-muted", not subreddit.subscribed ), ( "font-italic", not subreddit.subscribed ) ]
                         , onClick (ScrollTo <| FSub (Just subreddit.name))
                         ]
                         [ text subreddit.display_name ]
